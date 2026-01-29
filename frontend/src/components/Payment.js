@@ -112,7 +112,7 @@ const Payment = () => {
               </div>
               <div className="flex justify-between">
                 <span>Number of Rooms:</span>
-                <span>{booking.rooms_booked}</span>
+                <span>{typeof booking.rooms_booked === 'object' && booking.rooms_booked !== null ? (typeof booking.rooms_booked.rooms_booked === 'number' ? booking.rooms_booked.rooms_booked : 1) : (typeof booking.rooms_booked === 'number' ? booking.rooms_booked : 1)}</span>
               </div>
               <div className="flex justify-between">
                 <span>Check-in:</span>

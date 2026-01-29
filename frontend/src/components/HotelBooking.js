@@ -87,6 +87,57 @@ const HotelBooking = () => {
     setLoading(true);
 
     try {
+      // Check if this is a scraped hotel
+      if (hotel.is_scraped) {
+        // For scraped hotels, show booking summary and contact info
+        const confirmed = window.confirm(
+          `📞 Direct Booking Required\n\n` +
+          `Hotel: ${hotel.name}\n` +
+          `Room Type: ${roomType}\n` +
+          `Check-in: ${formData.checkInDate}\n` +
+          `Check-out: ${formData.checkOutDate}\n` +
+          `Total: PKR ${totalPrice.toLocaleString('en-PK')}\n\n` +
+          `This hotel requires direct confirmation. ` +
+          `We'll save your booking request and the hotel will contact you within 24 hours.\n\n` +
+          `Click OK to proceed, or Cancel to go back.`
+        );
+        
+        if (!confirmed) {
+          setLoading(false);
+          return;
+        }
+        
+        // Create a local booking object for scraped hotels
+        const localBooking = {
+          id: `local-${Date.now()}`,
+          hotel: hotel.name,
+          hotel_name: hotel.name,
+          location: hotel.location,
+          room_type: roomType,
+          rooms_booked: formData.rooms,
+          check_in: formData.checkInDate,
+          check_out: formData.checkOutDate,
+          total_price: totalPrice,
+          status: 'PENDING_CONFIRMATION',
+          payment_method: 'ARRIVAL',
+          is_scraped: true,
+          created_at: new Date().toISOString()
+        };
+        
+        // Save to localStorage for display in bookings page
+        const savedBookings = JSON.parse(localStorage.getItem('scrapedBookings') || '[]');
+        savedBookings.push(localBooking);
+        localStorage.setItem('scrapedBookings', JSON.stringify(savedBookings));
+        
+        // Show success message
+        alert('✅ Booking Request Submitted!\n\nYour booking request has been saved. The hotel will contact you within 24 hours to confirm availability and payment details.');
+        
+        // Redirect to bookings page
+        navigate('/dashboard?tab=bookings');
+        return;
+      }
+      
+      // For database hotels, proceed with normal API call
       const bookingData = {
         hotel: hotel.id,
         room_type: roomType,

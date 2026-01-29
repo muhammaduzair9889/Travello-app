@@ -14,22 +14,20 @@ Including another URLconf
     2. Add a URL to urlpatterns:  path('blog/', include('blog.urls'))
 """
 from django.contrib import admin
-from django.urls import path
-from rest_framework.decorators import api_view, permission_classes
-from rest_framework.permissions import AllowAny
-from rest_framework.response import Response
-
-
-@api_view(['POST'])
-@permission_classes([AllowAny])
-def chat_view(request):
-    message = request.data.get('message', '')
-    reply = f"You said: {message}. I’ll connect to a real AI model soon!"
-    return Response({
-        'reply': reply
-    })
+from django.urls import path, include
+from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
 
 urlpatterns = [
+    # Admin panel
     path('admin/', admin.site.urls),
-    path('api/chat/', chat_view, name='chat'),
+    
+    # JWT Token endpoints
+    path('api/token/', TokenObtainPairView.as_view(), name='token_obtain_pair'),
+    path('api/token/refresh/', TokenRefreshView.as_view(), name='token_refresh'),
+    
+    # Authentication endpoints (signup, login, etc.)
+    path('api/', include('authentication.urls')),
+    
+    # Hotel and booking endpoints
+    path('api/', include('hotels.urls')),
 ]

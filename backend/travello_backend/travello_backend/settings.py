@@ -63,6 +63,7 @@ INSTALLED_APPS = [
     'corsheaders',
     'authentication',
     'hotels',
+    'scraper',
 ]
 
 MIDDLEWARE = [
@@ -189,6 +190,16 @@ REST_FRAMEWORK = {
     'DEFAULT_PERMISSION_CLASSES': [
         'rest_framework.permissions.IsAuthenticated',
     ],
+    'DEFAULT_THROTTLE_CLASSES': [
+        'rest_framework.throttling.AnonRateThrottle',
+        'rest_framework.throttling.UserRateThrottle'
+    ],
+    'DEFAULT_THROTTLE_RATES': {
+        'anon': config('API_RATE_LIMIT', default='100/hour'),
+        'user': config('API_RATE_LIMIT', default='100/hour'),
+        'payment': config('API_PAYMENT_RATE_LIMIT', default='10/hour'),
+    },
+    'EXCEPTION_HANDLER': 'travello_backend.utils.custom_exception_handler',
 }
 
 # JWT Settings
@@ -227,13 +238,8 @@ if DEBUG:
 else:
     # Production: Specific origins only
     CORS_ALLOW_ALL_ORIGINS = False
-    CORS_ALLOWED_ORIGINS = [
-        "http://localhost:3000",
-        "http://127.0.0.1:3000",
-    ]
-    # Add frontend URL from environment variable
-    if 'FRONTEND_URL' in os.environ:
-        CORS_ALLOWED_ORIGINS.append(os.environ.get('FRONTEND_URL'))
+    CORS_ALLOWED_ORIGINS = config('CORS_ALLOWED_ORIGINS', 
+                                   default='http://localhost:3000,http://127.0.0.1:3000').split(',')
 
 CORS_ALLOW_CREDENTIALS = True
 
@@ -248,13 +254,41 @@ CORS_ALLOW_HEADERS = [
     'user-agent',
     'x-csrftoken',
     'x-requested-with',
+    'x-stripe-signature',  # For Stripe webhooks
 ]
 
+# Security Headers (HTTPS in production)
+SECURE_BROWSER_XSS_FILTER = True
+X_FRAME_OPTIONS = 'DENY'
+SECURE_CONTENT_SECURITY_POLICY = {
+    'default-src': ("'self'", "https:"),
+    'script-src': ("'self'", "'unsafe-inline'", "https://js.stripe.com"),
+    'style-src': ("'self'", "'unsafe-inline'"),
+    'img-src': ("'self'", "data:", "https:"),
+    'font-src': ("'self'", "data:", "https:"),
+    'connect-src': ("'self'", "https://api.stripe.com", "https://api.google.com"),
+}
+
+# HTTPS/SSL Settings (only in production)
+if not DEBUG:
+    SECURE_SSL_REDIRECT = config('SECURE_SSL_REDIRECT', default=True, cast=bool)
+    SESSION_COOKIE_SECURE = config('SESSION_COOKIE_SECURE', default=True, cast=bool)
+    CSRF_COOKIE_SECURE = config('CSRF_COOKIE_SECURE', default=True, cast=bool)
+    SECURE_HSTS_SECONDS = 31536000  # 1 year
+    SECURE_HSTS_INCLUDE_SUBDOMAINS = True
+    SECURE_HSTS_PRELOAD = True
+
 # reCAPTCHA Settings
-RECAPTCHA_SECRET_KEY = config('RECAPTCHA_SECRET_KEY', default='6Lc1nd0rAAAAAEGQ49HpLRq8kFj1CVPoC1-leNOd')
+RECAPTCHA_SECRET_KEY = config('RECAPTCHA_SECRET_KEY', default='')
+RECAPTCHA_SITE_KEY = config('RECAPTCHA_SITE_KEY', default='')
+
+# Validation: reCAPTCHA keys should be set in production
+if not DEBUG and not RECAPTCHA_SECRET_KEY:
+    import warnings
+    warnings.warn('RECAPTCHA_SECRET_KEY not set in production!')
 
 # OpenAI Settings
-OPENAI_API_KEY = config('OPENAI_API_KEY', default='***REMOVED***')
+OPENAI_API_KEY = config('OPENAI_API_KEY', default='')
 
 # Gemini AI Settings (Google's Free AI)
 GEMINI_API_KEY = config('GEMINI_API_KEY', default='')
@@ -271,3 +305,17 @@ AMADEUS_API_SECRET = config('AMADEUS_API_SECRET', default='')
 
 # WhiteNoise Static Files
 STATICFILES_STORAGE = 'whitenoise.storage.CompressedManifestStaticFilesStorage'
+# ============================================
+# STRIPE PAYMENT SETTINGS
+# ============================================
+STRIPE_PUBLISHABLE_KEY = config('STRIPE_PUBLISHABLE_KEY', default='')
+STRIPE_SECRET_KEY = config('STRIPE_SECRET_KEY', default='')
+STRIPE_WEBHOOK_SECRET = config('STRIPE_WEBHOOK_SECRET', default='')
+
+# Stripe currency settings
+STRIPE_CURRENCY_PRIMARY = config('STRIPE_CURRENCY_PRIMARY', default='PKR')
+STRIPE_CURRENCY_FALLBACK = config('STRIPE_CURRENCY_FALLBACK', default='USD')
+
+# Frontend payment URLs
+FRONTEND_PAYMENT_SUCCESS_URL = config('FRONTEND_PAYMENT_SUCCESS_URL', default='http://localhost:3000/payment-success')
+FRONTEND_PAYMENT_CANCEL_URL = config('FRONTEND_PAYMENT_CANCEL_URL', default='http://localhost:3000/payment-cancel')

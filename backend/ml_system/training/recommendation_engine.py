@@ -5,14 +5,26 @@ Filters by availability, city, price range (PKR), and re-ranks results
 
 import pandas as pd
 import numpy as np
-import torch
 import json
 import logging
 from pathlib import Path
 from typing import Dict, List, Tuple, Optional
-from transformers import AutoTokenizer, AutoModel
-from sklearn.metrics.pairwise import cosine_similarity
-from sklearn.preprocessing import normalize
+
+# Try to import ML dependencies, but make them optional
+try:
+    import torch
+    from transformers import AutoTokenizer, AutoModel
+    from sklearn.metrics.pairwise import cosine_similarity
+    from sklearn.preprocessing import normalize
+    ML_DEPENDENCIES_AVAILABLE = True
+except Exception as e:
+    logging.warning(f"ML dependencies not available: {e}")
+    ML_DEPENDENCIES_AVAILABLE = False
+    torch = None
+    AutoTokenizer = None
+    AutoModel = None
+    cosine_similarity = None
+    normalize = None
 
 logging.basicConfig(
     level=logging.INFO,
@@ -31,15 +43,24 @@ class RecommendationEngine:
     
     def __init__(self):
         """Load trained model and embeddings"""
+        if not ML_DEPENDENCIES_AVAILABLE:
+            logger.warning("ML dependencies not available. ML features will be disabled.")
+            self.model = None
+            self.tokenizer = None
+            return
+            
         self.backend_dir = Path(__file__).parent.parent.parent
         self.models_dir = self.backend_dir / "ml_system" / "models"
         
         # Load config
         config_file = self.models_dir / "travello_config.json"
         if not config_file.exists():
-            raise FileNotFoundError(
+            logger.warning(
                 f"Model not trained! Run: python ml_system/training/train_ml_model.py"
             )
+            self.model = None
+            self.tokenizer = None
+            return
         
         with open(config_file, 'r') as f:
             self.config = json.load(f)

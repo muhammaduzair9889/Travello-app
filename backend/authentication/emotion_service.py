@@ -1,6 +1,6 @@
 """
 Emotion Detection and Hotel Recommendation Service
-Uses Hugging Face transformers for emotion detection
+Uses Hugging Face transformers for emotion detection (lazy loading)
 Provides emotion-based hotel and tourist place recommendations
 """
 
@@ -10,41 +10,48 @@ import json
 
 logger = logging.getLogger(__name__)
 
-# Try to import ML libraries
-try:
-    from transformers import pipeline
-    import torch
-    EMOTION_MODEL_AVAILABLE = True
-    logger.info("Emotion detection model loaded successfully")
-except ImportError:
-    EMOTION_MODEL_AVAILABLE = False
-    logger.warning("Transformers not installed. Install with: pip install transformers torch")
+# Lazy import flag
+_EMOTION_MODEL_LOADED = False
+_EMOTION_MODEL_AVAILABLE = False
 
 
 class EmotionAwareRecommendationService:
     """
     Service for detecting emotions and providing contextual recommendations
+    Uses lazy loading for ML libraries
     """
     
     def __init__(self):
         self.emotion_classifier = None
-        self._initialize_model()
         
-    def _initialize_model(self):
-        """Initialize the emotion detection model"""
-        if EMOTION_MODEL_AVAILABLE:
-            try:
-                # Use a lightweight emotion detection model
-                self.emotion_classifier = pipeline(
-                    "text-classification",
-                    model="j-hartmann/emotion-english-distilroberta-base",
-                    return_all_scores=False,
-                    device=-1  # Use CPU
-                )
-                logger.info("Emotion classifier initialized")
-            except Exception as e:
-                logger.error(f"Failed to initialize emotion model: {e}")
-                self.emotion_classifier = None
+    def _lazy_initialize_model(self):
+        """Lazy initialize the emotion detection model only when needed"""
+        global _EMOTION_MODEL_LOADED, _EMOTION_MODEL_AVAILABLE
+        
+        if _EMOTION_MODEL_LOADED:
+            return self.emotion_classifier is not None
+            
+        _EMOTION_MODEL_LOADED = True
+        
+        try:
+            # Import only when needed
+            from transformers import pipeline
+            import torch
+            
+            # Use a lightweight emotion detection model
+            self.emotion_classifier = pipeline(
+                "text-classification",
+                model="j-hartmann/emotion-english-distilroberta-base",
+                return_all_scores=False,
+                device=-1  # Use CPU
+            )
+            _EMOTION_MODEL_AVAILABLE = True
+            logger.info("Emotion classifier initialized (lazy loaded)")
+            return True
+        except Exception as e:
+            logger.warning(f"Emotion model not available: {e}")
+            _EMOTION_MODEL_AVAILABLE = False
+            return False
     
     def detect_emotion(self, text: str) -> Tuple[str, float]:
         """
@@ -56,20 +63,23 @@ class EmotionAwareRecommendationService:
         Returns:
             Tuple of (emotion, confidence)
         """
-        if not self.emotion_classifier or not EMOTION_MODEL_AVAILABLE:
-            # Fallback to keyword-based detection
-            return self._detect_emotion_keywords(text)
+        # Lazy load the model
+        model_available = self._lazy_initialize_model()
         
-        try:
-            result = self.emotion_classifier(text)[0]
-            emotion = result['label']
-            confidence = result['score']
-            
-            logger.info(f"Detected emotion: {emotion} (confidence: {confidence:.2f})")
-            return emotion, confidence
-            
-        except Exception as e:
-            logger.error(f"Error detecting emotion: {e}")
+        if model_available and self.emotion_classifier:
+            try:
+                result = self.emotion_classifier(text)[0]
+                emotion = result['label']
+                confidence = result['score']
+                
+                logger.info(f"Detected emotion: {emotion} (confidence: {confidence:.2f})")
+                return emotion, confidence
+                
+            except Exception as e:
+                logger.error(f"Error detecting emotion: {e}")
+                return self._detect_emotion_keywords(text)
+        else:
+            # Fallback to keyword-based detection
             return self._detect_emotion_keywords(text)
     
     def _detect_emotion_keywords(self, text: str) -> Tuple[str, float]:

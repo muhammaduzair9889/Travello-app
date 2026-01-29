@@ -1,9 +1,10 @@
 Django==4.2.7
 djangorestframework==3.14.0
-djangorestframework-simplejwt==5.3.0
+djangorestframework-simplejwt==5.3.1
 django-cors-headers==4.3.1
 requests==2.31.0
 python-decouple==3.8
+python-dotenv==1.0.0
 openai==1.3.0
 PyMySQL==1.1.0
 cryptography==41.0.7
@@ -11,20 +12,25 @@ gunicorn==21.2.0
 dj-database-url==2.1.0
 psycopg2-binary==2.9.9
 whitenoise==6.6.0
+stripe
 
-# AI/ML packages for emotion detection and recommendations
-transformers==4.35.2
-torch==2.1.1
-scikit-learn==1.3.2
-pandas==2.1.4
-numpy==1.26.2
-sentencepiece==0.1.99
+# Web Scraping packages
+selenium==4.16.0
+webdriver-manager==4.0.1
 
-# Semantic search and recommendation system
-sentence-transformers==2.2.2
-faiss-cpu==1.7.4
-implicit==0.7.2
-tqdm==4.66.1
+# AI/ML packages for emotion detection and recommendations (Optional - comment out for faster install)
+# transformers==4.35.2
+# torch==2.2.2
+# scikit-learn==1.3.2
+# pandas==2.1.4
+# numpy==1.26.2
+# sentencepiece==0.2.0
+
+# Semantic search and recommendation system (Optional - comment out for faster install)
+# sentence-transformers==2.2.2
+# faiss-cpu==1.13.2
+# implicit==0.7.2
+# tqdm==4.66.1
 
 
 

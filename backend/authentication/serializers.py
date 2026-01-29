@@ -165,8 +165,9 @@ class AdminLoginSerializer(serializers.Serializer):
                 raise serializers.ValidationError('Invalid credentials')
             if not user.is_active:
                 raise serializers.ValidationError('User account is disabled')
-            if not (user.is_staff and user.is_superuser):
-                raise serializers.ValidationError('Access denied. Superuser privileges required.')
+            # Allow any staff user (not only superusers) to access admin login
+            if not user.is_staff:
+                raise serializers.ValidationError('Access denied. Staff privileges required.')
             attrs['user'] = user
             return attrs
         else:

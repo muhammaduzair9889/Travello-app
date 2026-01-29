@@ -40,12 +40,25 @@ const api = axios.create({
   timeout: 10000, // 10 second timeout
 });
 
+// Helper to pick correct token set (user vs admin)
+const resolveAuthTokens = () => {
+  const isAdmin = localStorage.getItem('isAdmin') === 'true';
+  // For user: try access_token first; for admin: try admin_access_token first
+  const access = isAdmin 
+    ? (localStorage.getItem('admin_access_token') || localStorage.getItem('access_token'))
+    : (localStorage.getItem('access_token') || localStorage.getItem('admin_access_token'));
+  const refresh = isAdmin 
+    ? (localStorage.getItem('admin_refresh_token') || localStorage.getItem('refresh_token'))
+    : (localStorage.getItem('refresh_token') || localStorage.getItem('admin_refresh_token'));
+  return { access, refresh, isAdmin };
+};
+
 // Add token to requests if available
 api.interceptors.request.use(
   (config) => {
-    const token = localStorage.getItem('access_token');
-    if (token) {
-      config.headers.Authorization = `Bearer ${token}`;
+    const { access } = resolveAuthTokens();
+    if (access) {
+      config.headers.Authorization = `Bearer ${access}`;
     }
     return config;
   },
@@ -63,36 +76,62 @@ api.interceptors.response.use(
     // Better error handling
     if (!error.response) {
       console.error('Network error:', error.message);
-      return Promise.reject({
-        message: 'Network error. Please check your connection.',
-        status: 'network_error'
-      });
+      // Provide detailed error information
+      const errorObj = {
+        message: error.message || 'Network error. Please check your connection.',
+        status: 'network_error',
+        details: {
+          timeout: error.code === 'ECONNABORTED',
+          apiUrl: API_BASE_URL,
+          isOffline: !navigator.onLine,
+          timestamp: new Date().toISOString()
+        }
+      };
+      console.error('Detailed error:', errorObj);
+      return Promise.reject(errorObj);
     }
     
     if (error.response?.status === 401 && !originalRequest._retry) {
       originalRequest._retry = true;
-      
-      const refreshToken = localStorage.getItem('refresh_token');
-      if (refreshToken) {
+
+      const { refresh, isAdmin } = resolveAuthTokens();
+      if (refresh) {
         try {
           const response = await axios.post(`${API_BASE_URL}/token/refresh/`, {
-            refresh: refreshToken,
+            refresh: refresh,
           });
-          
+
           const { access } = response.data;
-          localStorage.setItem('access_token', access);
-          
+          if (isAdmin) {
+            localStorage.setItem('admin_access_token', access);
+          } else {
+            localStorage.setItem('access_token', access);
+          }
+
           originalRequest.headers.Authorization = `Bearer ${access}`;
           return api(originalRequest);
         } catch (refreshError) {
-          localStorage.removeItem('access_token');
-          localStorage.removeItem('refresh_token');
-          window.location.href = '/login';
+          if (isAdmin) {
+            localStorage.removeItem('admin_access_token');
+            localStorage.removeItem('admin_refresh_token');
+            localStorage.removeItem('isAdmin');
+            window.location.href = '/admin-login';
+          } else {
+            localStorage.removeItem('access_token');
+            localStorage.removeItem('refresh_token');
+            window.location.href = '/login';
+          }
         }
       }
     }
     
-    return Promise.reject(error);
+    // Return more informative error
+    return Promise.reject({
+      message: error.response?.data?.error || error.response?.data?.detail || 'Request failed',
+      status: error.response?.status,
+      data: error.response?.data,
+      originalError: error
+    });
   }
 );
 
@@ -132,6 +171,7 @@ export const hotelAPI = {
   },
   getHotel: (id) => api.get(`/hotels/${id}/`),
   searchHotels: debounce((query) => api.get(`/hotels/search/?q=${query}`), 300),
+  checkAvailability: (payload) => api.post('/hotels/check-availability/', payload),
   createHotel: (hotelData) => {
     cache.delete('hotels_all'); // Invalidate cache
     return api.post('/hotels/', hotelData);
@@ -148,6 +188,7 @@ export const hotelAPI = {
 
 export const bookingAPI = {
   getAllBookings: () => api.get('/bookings/'),
+  getAdminBookings: (params = {}) => api.get('/bookings/admin/', { params }),
   getMyBookings: async () => {
     const cacheKey = 'bookings_my';
     const cached = getCachedData(cacheKey);
@@ -161,11 +202,21 @@ export const bookingAPI = {
     cache.delete('bookings_my');
     return api.post('/bookings/', bookingData);
   },
+  updateBookingStatus: (id, status) => api.patch(`/bookings/${id}/`, { status }),
+  cancelBooking: (id) => {
+    cache.delete('bookings_my');
+    return api.post(`/bookings/${id}/cancel/`);
+  },
   confirmPayment: (bookingId) => {
     cache.delete('bookings_my');
     return api.post(`/bookings/${bookingId}/confirm_payment/`);
   },
   getBooking: (id) => api.get(`/bookings/${id}/`),
+};
+
+export const paymentAPI = {
+  createSession: (bookingId) => api.post('/payments/create-session/', { booking_id: bookingId }),
+  getBookingStatus: (bookingId) => api.get(`/payments/booking/${bookingId}/status/`),
 };
 
 export default api;

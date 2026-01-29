@@ -1,39 +1,59 @@
-import { useState, useEffect } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { FaPlus, FaEdit, FaTrash, FaStar, FaWifi, FaParking } from 'react-icons/fa';
 import { X } from 'lucide-react';
 import { hotelAPI } from '../services/api';
 
+const ROOM_TYPE_CONFIG = [
+  { key: 'single', label: 'Single' },
+  { key: 'double', label: 'Double' },
+  { key: 'triple', label: 'Triple' },
+  { key: 'quad', label: 'Quad' },
+  { key: 'family', label: 'Family' },
+];
+
+const buildEmptyRoomTypes = () =>
+  ROOM_TYPE_CONFIG.reduce((acc, { key }) => {
+    acc[key] = { price: '', total: '' };
+    return acc;
+  }, {});
+
 const AdminHotels = () => {
   const navigate = useNavigate();
   const [hotels, setHotels] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
   const [showModal, setShowModal] = useState(false);
   const [editingHotel, setEditingHotel] = useState(null);
   const [formData, setFormData] = useState({
-    hotel_name: '',
+    name: '',
     city: '',
-    location: '',
-    total_rooms: '',
-    available_rooms: '',
-    single_bed_price_per_day: '',
-    family_room_price_per_day: '',
-    wifi_available: false,
-    parking_available: false,
+    address: '',
     description: '',
     image: '',
     rating: '0',
+    wifi_available: false,
+    parking_available: false,
+    roomTypes: buildEmptyRoomTypes(),
   });
+
+  const totalRoomsFromForm = useMemo(() => {
+    return ROOM_TYPE_CONFIG.reduce((sum, { key }) => {
+      const total = parseInt(formData.roomTypes[key].total, 10);
+      return sum + (Number.isInteger(total) ? total : 0);
+    }, 0);
+  }, [formData.roomTypes]);
 
   useEffect(() => {
     fetchHotels();
   }, []);
 
   const fetchHotels = async () => {
+    setLoading(true);
     try {
       const response = await hotelAPI.getAllHotels();
-      setHotels(response.data);
+      setHotels(response.data || []);
     } catch (error) {
       console.error('Error fetching hotels:', error);
       alert('Failed to load hotels. Please try again.');
@@ -42,112 +62,126 @@ const AdminHotels = () => {
     }
   };
 
+  const resetForm = () => {
+    setEditingHotel(null);
+    setFormData({
+      name: '',
+      city: '',
+      address: '',
+      description: '',
+      image: '',
+      rating: '0',
+      wifi_available: false,
+      parking_available: false,
+      roomTypes: buildEmptyRoomTypes(),
+    });
+  };
+
   const handleOpenModal = (hotel = null) => {
     if (hotel) {
       setEditingHotel(hotel);
-      setFormData(hotel);
-    } else {
-      setEditingHotel(null);
-      setFormData({
-        hotel_name: '',
-        city: '',
-        location: '',
-        total_rooms: '',
-        available_rooms: '',
-        single_bed_price_per_day: '',
-        family_room_price_per_day: '',
-        wifi_available: false,
-        parking_available: false,
-        description: '',
-        image: '',
-        rating: '0',
+      const roomTypes = buildEmptyRoomTypes();
+      (hotel.room_types || []).forEach((rt) => {
+        if (roomTypes[rt.type]) {
+          roomTypes[rt.type] = {
+            price: rt.price_per_night?.toString() || '',
+            total: rt.total_rooms?.toString() || '',
+          };
+        }
       });
+      setFormData({
+        name: hotel.name || '',
+        city: hotel.city || '',
+        address: hotel.address || '',
+        description: hotel.description || '',
+        image: hotel.image || '',
+        rating: hotel.rating?.toString() || '0',
+        wifi_available: Boolean(hotel.wifi_available),
+        parking_available: Boolean(hotel.parking_available),
+        roomTypes,
+      });
+    } else {
+      resetForm();
     }
     setShowModal(true);
   };
 
   const handleCloseModal = () => {
     setShowModal(false);
-    setEditingHotel(null);
+    resetForm();
+  };
+
+  const handleRoomTypeChange = (key, field, value) => {
+    setFormData((prev) => ({
+      ...prev,
+      roomTypes: {
+        ...prev.roomTypes,
+        [key]: {
+          ...prev.roomTypes[key],
+          [field]: value,
+        },
+      },
+    }));
   };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    
+    if (!formData.name.trim() || !formData.city.trim() || !formData.address.trim()) {
+      alert('Name, city, and address are required.');
+      return;
+    }
+
+    const room_types_payload = ROOM_TYPE_CONFIG.map(({ key }) => {
+      const price = parseFloat(formData.roomTypes[key].price);
+      const total = parseInt(formData.roomTypes[key].total, 10);
+      if (Number.isFinite(price) && price > 0 && Number.isInteger(total) && total > 0) {
+        return {
+          type: key,
+          price_per_night: price,
+          total_rooms: total,
+          max_occupancy: 2,
+        };
+      }
+      return null;
+    }).filter(Boolean);
+
+    const payload = {
+      name: formData.name.trim(),
+      city: formData.city.trim(),
+      address: formData.address.trim(),
+      description: formData.description.trim(),
+      image: formData.image.trim(),
+      rating: parseFloat(formData.rating) || 0,
+      wifi_available: Boolean(formData.wifi_available),
+      parking_available: Boolean(formData.parking_available),
+    };
+
+    if (room_types_payload.length) {
+      payload.room_types_payload = room_types_payload;
+    }
+
+    setSaving(true);
     try {
-      // Format data properly for backend
-      const hotelData = {
-        hotel_name: formData.hotel_name,
-        city: formData.city,
-        location: formData.location,
-        total_rooms: parseInt(formData.total_rooms),
-        available_rooms: parseInt(formData.available_rooms),
-        single_bed_price_per_day: parseFloat(formData.single_bed_price_per_day),
-        family_room_price_per_day: parseFloat(formData.family_room_price_per_day),
-        wifi_available: Boolean(formData.wifi_available),
-        parking_available: Boolean(formData.parking_available),
-        description: formData.description,
-        image: formData.image || '',
-        rating: parseFloat(formData.rating) || 0.0,
-      };
-      
-      // Log the data being sent for debugging
-      console.log('Submitting hotel data:', hotelData);
-      
       if (editingHotel) {
-        const response = await hotelAPI.updateHotel(editingHotel.id, hotelData);
-        console.log('Hotel updated:', response.data);
+        await hotelAPI.updateHotel(editingHotel.id, payload);
         alert('Hotel updated successfully!');
       } else {
-        const response = await hotelAPI.createHotel(hotelData);
-        console.log('Hotel created:', response.data);
+        await hotelAPI.createHotel(payload);
         alert('Hotel created successfully!');
       }
-      
       handleCloseModal();
       fetchHotels();
     } catch (error) {
       console.error('Error saving hotel:', error);
-      console.error('Error response:', error.response);
-      
-      // More detailed error message
-      let errorMessage = 'Failed to save hotel. Please try again.';
-      
-      if (error.response) {
-        if (error.response.data) {
-          if (typeof error.response.data === 'string') {
-            errorMessage = error.response.data;
-          } else if (error.response.data.error) {
-            errorMessage = error.response.data.error;
-          } else if (error.response.data.detail) {
-            errorMessage = error.response.data.detail;
-          } else {
-            // Show all field errors
-            const errors = Object.entries(error.response.data)
-              .map(([key, value]) => `${key}: ${Array.isArray(value) ? value.join(', ') : value}`)
-              .join('\n');
-            errorMessage = errors || errorMessage;
-          }
-        }
-        
-        if (error.response.status === 403) {
-          errorMessage = 'Access denied. You need admin privileges to manage hotels.';
-        } else if (error.response.status === 401) {
-          errorMessage = 'Authentication required. Please login again.';
-        }
-      } else if (error.request) {
-        errorMessage = 'No response from server. Please check your connection.';
-      }
-      
-      alert(errorMessage);
+      const message = error?.data?.error || error?.message || 'Failed to save hotel. Please try again.';
+      alert(message);
+    } finally {
+      setSaving(false);
     }
   };
 
   const handleDelete = async (hotelId) => {
-    if (!window.confirm('Are you sure you want to delete this hotel?')) {
-      return;
-    }
-
+    if (!window.confirm('Are you sure you want to delete this hotel?')) return;
     try {
       await hotelAPI.deleteHotel(hotelId);
       alert('Hotel deleted successfully!');
@@ -172,15 +206,10 @@ const AdminHotels = () => {
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900 py-8 px-4">
       <div className="max-w-7xl mx-auto">
-        {/* Header */}
         <div className="flex items-center justify-between mb-8">
           <div>
-            <h1 className="text-3xl font-bold text-gray-800 dark:text-white mb-2">
-              Manage Hotels
-            </h1>
-            <p className="text-gray-600 dark:text-gray-400">
-              Add, edit, or remove hotels from the system
-            </p>
+            <h1 className="text-3xl font-bold text-gray-800 dark:text-white mb-2">Manage Hotels</h1>
+            <p className="text-gray-600 dark:text-gray-400">Add, edit, or remove hotels from the system</p>
           </div>
           <button
             onClick={() => handleOpenModal()}
@@ -191,77 +220,67 @@ const AdminHotels = () => {
           </button>
         </div>
 
-        {/* Hotels Table */}
         <div className="bg-white dark:bg-gray-800 rounded-xl shadow-lg overflow-hidden">
           <div className="overflow-x-auto">
             <table className="w-full">
               <thead className="bg-gray-50 dark:bg-gray-700">
                 <tr>
-                  <th className="px-6 py-4 text-left text-sm font-semibold text-gray-700 dark:text-gray-300">
-                    Hotel Name
-                  </th>
-                  <th className="px-6 py-4 text-left text-sm font-semibold text-gray-700 dark:text-gray-300">
-                    City
-                  </th>
-                  <th className="px-6 py-4 text-left text-sm font-semibold text-gray-700 dark:text-gray-300">
-                    Location
-                  </th>
-                  <th className="px-6 py-4 text-left text-sm font-semibold text-gray-700 dark:text-gray-300">
-                    Rooms
-                  </th>
-                  <th className="px-6 py-4 text-left text-sm font-semibold text-gray-700 dark:text-gray-300">
-                    Prices
-                  </th>
-                  <th className="px-6 py-4 text-left text-sm font-semibold text-gray-700 dark:text-gray-300">
-                    Rating
-                  </th>
-                  <th className="px-6 py-4 text-left text-sm font-semibold text-gray-700 dark:text-gray-300">
-                    Amenities
-                  </th>
-                  <th className="px-6 py-4 text-right text-sm font-semibold text-gray-700 dark:text-gray-300">
-                    Actions
-                  </th>
+                  <th className="px-6 py-4 text-left text-sm font-semibold text-gray-700 dark:text-gray-300">Hotel</th>
+                  <th className="px-6 py-4 text-left text-sm font-semibold text-gray-700 dark:text-gray-300">City</th>
+                  <th className="px-6 py-4 text-left text-sm font-semibold text-gray-700 dark:text-gray-300">Address</th>
+                  <th className="px-6 py-4 text-left text-sm font-semibold text-gray-700 dark:text-gray-300">Availability</th>
+                  <th className="px-6 py-4 text-left text-sm font-semibold text-gray-700 dark:text-gray-300">Room Types</th>
+                  <th className="px-6 py-4 text-left text-sm font-semibold text-gray-700 dark:text-gray-300">Rating</th>
+                  <th className="px-6 py-4 text-left text-sm font-semibold text-gray-700 dark:text-gray-300">Amenities</th>
+                  <th className="px-6 py-4 text-right text-sm font-semibold text-gray-700 dark:text-gray-300">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
                 {hotels.map((hotel) => (
                   <tr key={hotel.id} className="hover:bg-gray-50 dark:hover:bg-gray-700">
                     <td className="px-6 py-4">
-                      <div className="font-medium text-gray-800 dark:text-white">
-                        {hotel.hotel_name}
-                      </div>
+                      <div className="font-medium text-gray-800 dark:text-white">{hotel.name}</div>
                     </td>
-                    <td className="px-6 py-4 text-gray-600 dark:text-gray-400">
-                      {hotel.city}
-                    </td>
-                    <td className="px-6 py-4 text-gray-600 dark:text-gray-400">
-                      {hotel.location}
-                    </td>
+                    <td className="px-6 py-4 text-gray-600 dark:text-gray-400">{hotel.city}</td>
+                    <td className="px-6 py-4 text-gray-600 dark:text-gray-400">{hotel.address}</td>
                     <td className="px-6 py-4 text-gray-600 dark:text-gray-400">
                       {hotel.available_rooms} / {hotel.total_rooms}
                     </td>
-                    <td className="px-6 py-4">
-                      <div className="text-sm text-gray-600 dark:text-gray-400">
-                        <div>Single: PKR {hotel.single_bed_price_per_day.toLocaleString('en-PK')}</div>
-                        <div>Family: PKR {hotel.family_room_price_per_day.toLocaleString('en-PK')}</div>
+                    <td className="px-6 py-4 text-gray-600 dark:text-gray-400">
+                      <div className="flex flex-wrap gap-2">
+                        {(hotel.room_types || []).map((rt) => (
+                          <span
+                            key={rt.id}
+                            className={`px-2 py-1 rounded-full text-xs border flex items-center gap-1 ${
+                              rt.available_rooms > 0
+                                ? 'border-green-500 text-green-700 bg-green-50 dark:bg-green-900/30'
+                                : 'border-gray-400 text-gray-600 dark:text-gray-300 dark:border-gray-600'
+                            }`}
+                          >
+                            <span className="capitalize">{rt.type}</span>
+                            <span>PKR {Number(rt.price_per_night).toLocaleString()}</span>
+                            <span>
+                              ({rt.available_rooms}/{rt.total_rooms})
+                            </span>
+                          </span>
+                        ))}
+                        {(hotel.room_types || []).length === 0 && (
+                          <span className="text-xs text-gray-500">No room types</span>
+                        )}
                       </div>
                     </td>
                     <td className="px-6 py-4">
                       <div className="flex items-center gap-1">
                         <FaStar className="text-yellow-500" />
                         <span className="text-gray-800 dark:text-white font-medium">
-                          {hotel.rating.toFixed(1)}
+                          {(hotel.rating ?? 0).toFixed(1)}
                         </span>
                       </div>
                     </td>
                     <td className="px-6 py-4">
                       <div className="flex gap-2">
-                        {hotel.wifi_available && (
-                          <FaWifi className="text-sky-600" title="WiFi Available" />
-                        )}
-                        {hotel.parking_available && (
-                          <FaParking className="text-sky-600" title="Parking Available" />
-                        )}
+                        {hotel.wifi_available && <FaWifi className="text-sky-600" title="WiFi Available" />}
+                        {hotel.parking_available && <FaParking className="text-sky-600" title="Parking Available" />}
                       </div>
                     </td>
                     <td className="px-6 py-4 text-right">
@@ -289,7 +308,6 @@ const AdminHotels = () => {
           </div>
         </div>
 
-        {/* Back Button */}
         <div className="mt-8 text-center">
           <button
             onClick={() => navigate('/admin-dashboard')}
@@ -300,7 +318,6 @@ const AdminHotels = () => {
         </div>
       </div>
 
-      {/* Add/Edit Modal */}
       <AnimatePresence>
         {showModal && (
           <motion.div
@@ -314,7 +331,7 @@ const AdminHotels = () => {
               initial={{ scale: 0.9, y: 20 }}
               animate={{ scale: 1, y: 0 }}
               exit={{ scale: 0.9, y: 20 }}
-              className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl p-6 max-w-2xl w-full max-h-[90vh] overflow-y-auto"
+              className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl p-6 max-w-3xl w-full max-h-[90vh] overflow-y-auto"
               onClick={(e) => e.stopPropagation()}
             >
               <div className="flex items-center justify-between mb-6">
@@ -329,126 +346,58 @@ const AdminHotels = () => {
                 </button>
               </div>
 
-                <form onSubmit={handleSubmit} className="space-y-4">
+              <form onSubmit={handleSubmit} className="space-y-6">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                      Hotel Name *
-                    </label>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Hotel Name *</label>
                     <input
                       type="text"
                       className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-sky-500 focus:border-transparent outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-                      value={formData.hotel_name}
-                      onChange={(e) => setFormData({ ...formData, hotel_name: e.target.value })}
+                      value={formData.name}
+                      onChange={(e) => setFormData({ ...formData, name: e.target.value })}
                       required
                     />
                   </div>
 
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                      City *
-                    </label>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">City *</label>
                     <input
                       type="text"
                       className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-sky-500 focus:border-transparent outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
                       value={formData.city}
                       onChange={(e) => setFormData({ ...formData, city: e.target.value })}
                       required
-                      placeholder="e.g., New York, London, Dubai"
+                      placeholder="e.g., Lahore"
                     />
                   </div>
 
                   <div className="md:col-span-2">
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                      Location/Address *
-                    </label>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Address *</label>
                     <input
                       type="text"
                       className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-sky-500 focus:border-transparent outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-                      value={formData.location}
-                      onChange={(e) => setFormData({ ...formData, location: e.target.value })}
+                      value={formData.address}
+                      onChange={(e) => setFormData({ ...formData, address: e.target.value })}
                       required
-                      placeholder="Full address"
+                      placeholder="Street, area, city"
                     />
                   </div>
 
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                      Total Rooms *
-                    </label>
-                    <input
-                      type="number"
-                      className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-sky-500 focus:border-transparent outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-                      value={formData.total_rooms}
-                      onChange={(e) => setFormData({ ...formData, total_rooms: e.target.value })}
-                      required
-                      min="1"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                      Available Rooms *
-                    </label>
-                    <input
-                      type="number"
-                      className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-sky-500 focus:border-transparent outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-                      value={formData.available_rooms}
-                      onChange={(e) => setFormData({ ...formData, available_rooms: e.target.value })}
-                      required
-                      min="0"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                      Single Room Price *
-                    </label>
-                    <input
-                      type="number"
-                      step="0.01"
-                      className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-sky-500 focus:border-transparent outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-                      value={formData.single_bed_price_per_day}
-                      onChange={(e) => setFormData({ ...formData, single_bed_price_per_day: e.target.value })}
-                      required
-                      min="0"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                      Family Room Price *
-                    </label>
-                    <input
-                      type="number"
-                      step="0.01"
-                      className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-sky-500 focus:border-transparent outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-                      value={formData.family_room_price_per_day}
-                      onChange={(e) => setFormData({ ...formData, family_room_price_per_day: e.target.value })}
-                      required
-                      min="0"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                      Rating
-                    </label>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Rating</label>
                     <input
                       type="number"
                       step="0.1"
+                      min="0"
+                      max="5"
                       className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-sky-500 focus:border-transparent outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
                       value={formData.rating}
                       onChange={(e) => setFormData({ ...formData, rating: e.target.value })}
-                      min="0"
-                      max="5"
                     />
                   </div>
 
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                      Image URL
-                    </label>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Image URL</label>
                     <input
                       type="url"
                       className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-sky-500 focus:border-transparent outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
@@ -457,12 +406,20 @@ const AdminHotels = () => {
                       placeholder="https://example.com/image.jpg"
                     />
                   </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Total Rooms (calculated)</label>
+                    <input
+                      type="number"
+                      className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-gray-100 dark:bg-gray-700 text-gray-900 dark:text-white"
+                      value={totalRoomsFromForm}
+                      readOnly
+                    />
+                  </div>
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                    Description *
-                  </label>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Description *</label>
                   <textarea
                     className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-sky-500 focus:border-transparent outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
                     rows="4"
@@ -480,9 +437,7 @@ const AdminHotels = () => {
                       checked={formData.wifi_available}
                       onChange={(e) => setFormData({ ...formData, wifi_available: e.target.checked })}
                     />
-                    <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
-                      WiFi Available
-                    </span>
+                    <span className="text-sm font-medium text-gray-700 dark:text-gray-300">WiFi Available</span>
                   </label>
 
                   <label className="flex items-center gap-2 cursor-pointer">
@@ -492,10 +447,46 @@ const AdminHotels = () => {
                       checked={formData.parking_available}
                       onChange={(e) => setFormData({ ...formData, parking_available: e.target.checked })}
                     />
-                    <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
-                      Parking Available
-                    </span>
+                    <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Parking Available</span>
                   </label>
+                </div>
+
+                <div className="mt-4">
+                  <h3 className="text-lg font-semibold text-gray-800 dark:text-white mb-3">Room Types</h3>
+                  <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">Enter price per night and total rooms for each room type you want to offer.</p>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {ROOM_TYPE_CONFIG.map(({ key, label }) => (
+                      <div key={key} className="p-4 rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-700/30">
+                        <h4 className="text-md font-semibold text-gray-800 dark:text-white mb-2">{label} Room</h4>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                          <div>
+                            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Price per night (PKR)</label>
+                            <input
+                              type="number"
+                              step="0.01"
+                              min="0"
+                              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-sky-500 focus:border-transparent outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                              value={formData.roomTypes[key].price}
+                              onChange={(e) => handleRoomTypeChange(key, 'price', e.target.value)}
+                              placeholder="e.g., 8000"
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Total Rooms</label>
+                            <input
+                              type="number"
+                              min="0"
+                              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-sky-500 focus:border-transparent outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                              value={formData.roomTypes[key].total}
+                              onChange={(e) => handleRoomTypeChange(key, 'total', e.target.value)}
+                              placeholder="e.g., 5"
+                            />
+                          </div>
+                        </div>
+                        <p className="text-xs text-gray-500 dark:text-gray-400 mt-2">Leave blank or zero to omit this room type.</p>
+                      </div>
+                    ))}
+                  </div>
                 </div>
 
                 <div className="flex gap-4 pt-4">
@@ -508,9 +499,10 @@ const AdminHotels = () => {
                   </button>
                   <button
                     type="submit"
-                    className="flex-1 py-3 bg-sky-600 hover:bg-sky-700 text-white rounded-lg font-medium transition-colors"
+                    disabled={saving}
+                    className="flex-1 py-3 bg-sky-600 hover:bg-sky-700 disabled:opacity-60 text-white rounded-lg font-medium transition-colors"
                   >
-                    {editingHotel ? 'Update Hotel' : 'Create Hotel'}
+                    {saving ? 'Saving...' : editingHotel ? 'Update Hotel' : 'Create Hotel'}
                   </button>
                 </div>
               </form>

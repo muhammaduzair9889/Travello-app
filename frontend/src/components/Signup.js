@@ -139,9 +139,18 @@ const Signup = () => {
       localStorage.setItem('user', JSON.stringify(response.data.user));
       navigate('/dashboard');
     } catch (error) {
-      // If backend returns HTML, show a friendly message
-      let errorMsg = '';
-      if (error.response) {
+      console.error('Signup error:', error);
+      
+      // Improved error handling
+      let errorMsg = 'Signup failed. Please try again.';
+      
+      if (error.status === 'network_error') {
+        errorMsg = `Network error: Cannot connect to server. Make sure the backend server is running at ${error.details?.apiUrl}`;
+      } else if (error.status === 400) {
+        errorMsg = error.message || 'Invalid data. Please check your information.';
+      } else if (error.status === 500) {
+        errorMsg = 'Server error. Please try again later.';
+      } else if (error.response) {
         if (typeof error.response.data === 'object') {
           errorMsg = error.response.data.error || JSON.stringify(error.response.data);
         } else if (typeof error.response.data === 'string' && error.response.data.startsWith('<!DOCTYPE html')) {
@@ -149,9 +158,10 @@ const Signup = () => {
         } else {
           errorMsg = error.response.data;
         }
-      } else {
+      } else if (error.message) {
         errorMsg = error.message;
       }
+      
       setError(errorMsg);
     } finally {
       setLoading(false);

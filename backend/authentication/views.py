@@ -9,80 +9,119 @@ from django.contrib.auth import authenticate
 from .serializers import UserRegistrationSerializer, UserLoginSerializer, UserSerializer, AdminLoginSerializer
 from .models import User
 from .chat_service import get_ai_response
+from travello_backend.utils import get_safe_error_response
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 def verify_recaptcha(token):
     """Verify reCAPTCHA token with Google's API"""
-    data = {
-        'secret': settings.RECAPTCHA_SECRET_KEY,
-        'response': token
-    }
-    response = requests.post('https://www.google.com/recaptcha/api/siteverify', data=data)
-    result = response.json()
-    # Log the full response for debugging
-    print('reCAPTCHA API response:', result)
-    return result.get('success', False)
+    # Validate reCAPTCHA key is configured
+    if not settings.RECAPTCHA_SECRET_KEY:
+        logger.warning('reCAPTCHA secret key not configured')
+        return False
+    
+    try:
+        data = {
+            'secret': settings.RECAPTCHA_SECRET_KEY,
+            'response': token
+        }
+        response = requests.post('https://www.google.com/recaptcha/api/siteverify', data=data, timeout=5)
+        result = response.json()
+        success = result.get('success', False)
+        
+        if not success:
+            logger.warning(f"reCAPTCHA verification failed: {result.get('error-codes', [])}")
+        
+        return success
+    except Exception as e:
+        logger.error(f"Error verifying reCAPTCHA: {str(e)}")
+        return False
 
 
 @api_view(['POST'])
 @permission_classes([AllowAny])
 def signup(request):
     """User registration endpoint"""
-    serializer = UserRegistrationSerializer(data=request.data)
-    
-    if serializer.is_valid():
+    try:
+        serializer = UserRegistrationSerializer(data=request.data)
         
-        # Check if user already exists
-        email = serializer.validated_data.get('email')
-        if User.objects.filter(email=email).exists():
-            return Response(
-                {'error': 'User with this email already exists'}, 
-                status=status.HTTP_400_BAD_REQUEST
-            )
+        if serializer.is_valid():
+            
+            # Check if user already exists
+            email = serializer.validated_data.get('email')
+            if User.objects.filter(email=email).exists():
+                logger.warning(f"Signup attempt with existing email: {email}")
+                return get_safe_error_response(
+                    'Email already registered',
+                    status.HTTP_400_BAD_REQUEST
+                )
+            
+            # Create user
+            user = serializer.save()
+            logger.info(f"New user created: {user.email}")
+            
+            # Generate JWT tokens
+            refresh = RefreshToken.for_user(user)
+            access_token = refresh.access_token
+            
+            return Response({
+                'message': 'User created successfully',
+                'user': UserSerializer(user).data,
+                'tokens': {
+                    'access': str(access_token),
+                    'refresh': str(refresh)
+                }
+            }, status=status.HTTP_201_CREATED)
         
-        # Create user
-        user = serializer.save()
-        
-        # Generate JWT tokens
-        refresh = RefreshToken.for_user(user)
-        access_token = refresh.access_token
-        
-        return Response({
-            'message': 'User created successfully',
-            'user': UserSerializer(user).data,
-            'tokens': {
-                'access': str(access_token),
-                'refresh': str(refresh)
-            }
-        }, status=status.HTTP_201_CREATED)
-    
-    return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        return get_safe_error_response(
+            'Invalid registration data',
+            status.HTTP_400_BAD_REQUEST
+        )
+    except Exception as e:
+        logger.error(f"Error during signup: {str(e)}")
+        return get_safe_error_response(
+            'Error creating user account',
+            status.HTTP_500_INTERNAL_SERVER_ERROR
+        )
 
 
 @api_view(['POST'])
 @permission_classes([AllowAny])
 def login(request):
     """User login endpoint"""
-    serializer = UserLoginSerializer(data=request.data)
-    
-    if serializer.is_valid():
+    try:
+        serializer = UserLoginSerializer(data=request.data)
         
-        user = serializer.validated_data['user']
+        if serializer.is_valid():
+            user = serializer.validated_data['user']
+            logger.info(f"User login successful: {user.email}")
+            
+            # Generate JWT tokens
+            refresh = RefreshToken.for_user(user)
+            access_token = refresh.access_token
+            
+            return Response({
+                'message': 'Login successful',
+                'user': UserSerializer(user).data,
+                'tokens': {
+                    'access': str(access_token),
+                    'refresh': str(refresh)
+                }
+            }, status=status.HTTP_200_OK)
         
-        # Generate JWT tokens
-        refresh = RefreshToken.for_user(user)
-        access_token = refresh.access_token
-        
-        return Response({
-            'message': 'Login successful',
-            'user': UserSerializer(user).data,
-            'tokens': {
-                'access': str(access_token),
-                'refresh': str(refresh)
-            }
-        }, status=status.HTTP_200_OK)
-    
-    return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        logger.warning(f"Failed login attempt: {request.data.get('email', 'unknown')}")
+        return get_safe_error_response(
+            'Invalid credentials',
+            status.HTTP_400_BAD_REQUEST
+        )
+    except Exception as e:
+        logger.error(f"Error during login: {str(e)}")
+        return get_safe_error_response(
+            'Error processing login',
+            status.HTTP_500_INTERNAL_SERVER_ERROR
+        )
 
 
 @api_view(['POST'])
@@ -108,36 +147,50 @@ def verify_captcha(request):
 @permission_classes([AllowAny])
 def admin_login(request):
     """Admin login endpoint"""
-    serializer = AdminLoginSerializer(data=request.data)
-    
-    if serializer.is_valid():
-        user = serializer.validated_data['user']
+    try:
+        serializer = AdminLoginSerializer(data=request.data)
         
-        # Double check admin status
-        if not (user.is_staff and user.is_superuser):
-            return Response(
-                {'error': 'Access denied. Admin privileges required.'},
-                status=status.HTTP_403_FORBIDDEN
-            )
+        if serializer.is_valid():
+            user = serializer.validated_data['user']
+            
+            # Double check staff status (allow staff; superuser not required)
+            if not user.is_staff:
+                logger.warning(f"Non-staff user attempted admin login: {user.email}")
+                return get_safe_error_response(
+                    'Access denied',
+                    status.HTTP_403_FORBIDDEN
+                )
+            
+            logger.info(f"Admin login successful: {user.email}")
+            
+            # Generate JWT tokens
+            refresh = RefreshToken.for_user(user)
+            access_token = refresh.access_token
+            
+            # Add custom claim for admin status
+            access_token['is_admin'] = True
+            
+            return Response({
+                'message': 'Admin login successful',
+                'user': UserSerializer(user).data,
+                'is_admin': True,
+                'tokens': {
+                    'access': str(access_token),
+                    'refresh': str(refresh)
+                }
+            }, status=status.HTTP_200_OK)
         
-        # Generate JWT tokens
-        refresh = RefreshToken.for_user(user)
-        access_token = refresh.access_token
-        
-        # Add custom claim for admin status
-        access_token['is_admin'] = True
-        
-        return Response({
-            'message': 'Admin login successful',
-            'user': UserSerializer(user).data,
-            'is_admin': True,
-            'tokens': {
-                'access': str(access_token),
-                'refresh': str(refresh)
-            }
-        }, status=status.HTTP_200_OK)
-    
-    return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        logger.warning(f"Failed admin login attempt: {request.data.get('email', 'unknown')}")
+        return get_safe_error_response(
+            'Invalid credentials',
+            status.HTTP_400_BAD_REQUEST
+        )
+    except Exception as e:
+        logger.error(f"Error during admin login: {str(e)}")
+        return get_safe_error_response(
+            'Error processing login',
+            status.HTTP_500_INTERNAL_SERVER_ERROR
+        )
 
 
 @api_view(['POST'])

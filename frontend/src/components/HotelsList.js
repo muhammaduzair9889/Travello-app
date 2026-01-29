@@ -21,8 +21,8 @@ const HotelsList = () => {
     const query = searchQuery.toLowerCase();
     return hotels.filter(
       (hotel) =>
-        hotel.hotel_name?.toLowerCase().includes(query) ||
-        hotel.location?.toLowerCase().includes(query) ||
+        hotel.name?.toLowerCase().includes(query) ||
+        hotel.address?.toLowerCase().includes(query) ||
         hotel.city?.toLowerCase().includes(query)
     );
   }, [searchQuery, hotels]);
@@ -40,7 +40,7 @@ const HotelsList = () => {
   };
 
   const handleBookRoom = useCallback((hotel, roomType) => {
-    navigate('/hotel-booking', { state: { hotel, roomType } });
+    navigate(`/hotels/${hotel.id}`, { state: { roomType } });
   }, [navigate]);
 
   if (loading) {
@@ -104,19 +104,19 @@ const HotelsList = () => {
                   {hotel.image ? (
                     <img
                       src={hotel.image}
-                      alt={hotel.hotel_name}
+                      alt={hotel.name || 'Hotel'}
                       className="w-full h-full object-cover"
                     />
                   ) : (
                     <div className="w-full h-full flex items-center justify-center text-white text-4xl font-bold">
-                      {hotel.hotel_name.charAt(0)}
+                      {(hotel.name || 'H').charAt(0)}
                     </div>
                   )}
                   {/* Rating Badge */}
                   <div className="absolute top-4 right-4 bg-white dark:bg-gray-800 px-3 py-1 rounded-full flex items-center gap-1">
                     <FaStar className="text-yellow-500" />
                     <span className="font-semibold text-gray-800 dark:text-white">
-                      {hotel.rating.toFixed(1)}
+                      {Number(hotel.rating ?? 0).toFixed(1)}
                     </span>
                   </div>
                 </div>
@@ -124,12 +124,12 @@ const HotelsList = () => {
                 {/* Hotel Details */}
                 <div className="p-6">
                   <h3 className="text-xl font-bold text-gray-800 dark:text-white mb-2">
-                    {hotel.hotel_name}
+                    {hotel.name || 'Hotel'}
                   </h3>
                   
                   <div className="flex items-center gap-2 text-gray-600 dark:text-gray-400 mb-3">
                     <FaMapMarkerAlt className="text-sky-600" />
-                    <span className="text-sm">{hotel.location}</span>
+                    <span className="text-sm">{hotel.city}</span>
                   </div>
 
                   <p className="text-sm text-gray-600 dark:text-gray-400 mb-4 line-clamp-2">
@@ -181,69 +181,69 @@ const HotelsList = () => {
                     </p>
                   </div>
 
-                  {/* Pricing - All 4 Room Types */}
-                  <div className="grid grid-cols-2 gap-2 mb-4">
-                    <div className="text-center p-2 bg-blue-50 dark:bg-blue-900/30 rounded-lg">
-                      <p className="text-xs text-gray-600 dark:text-gray-400 mb-1">Double Room</p>
-                      <p className="text-base font-bold text-blue-600 dark:text-blue-400">
-                        PKR {(hotel.double_bed_price_per_day || Math.round(hotel.single_bed_price_per_day * 1.4)).toLocaleString('en-PK')}
-                      </p>
-                      <p className="text-xs text-gray-500 dark:text-gray-400">per day</p>
+                  {/* Pricing - Room Types from API */}
+                  {(hotel.room_types || []).length > 0 ? (
+                    <div className="grid grid-cols-2 gap-2 mb-4">
+                      {hotel.room_types.slice(0, 4).map((rt) => {
+                        const colors = {
+                          single: { bg: 'bg-blue-50 dark:bg-blue-900/30', text: 'text-blue-600 dark:text-blue-400' },
+                          double: { bg: 'bg-green-50 dark:bg-green-900/30', text: 'text-green-600 dark:text-green-400' },
+                          triple: { bg: 'bg-orange-50 dark:bg-orange-900/30', text: 'text-orange-600 dark:text-orange-400' },
+                          quad: { bg: 'bg-yellow-50 dark:bg-yellow-900/30', text: 'text-yellow-600 dark:text-yellow-400' },
+                          family: { bg: 'bg-purple-50 dark:bg-purple-900/30', text: 'text-purple-600 dark:text-purple-400' },
+                        };
+                        const color = colors[rt.type] || colors.single;
+                        return (
+                          <div key={rt.id} className={`text-center p-2 ${color.bg} rounded-lg`}>
+                            <p className="text-xs text-gray-600 dark:text-gray-400 mb-1 capitalize">{rt.type} Room</p>
+                            <p className={`text-base font-bold ${color.text}`}>
+                              PKR {Number(rt.price_per_night).toLocaleString('en-PK')}
+                            </p>
+                            <p className="text-xs text-gray-500 dark:text-gray-400">per day</p>
+                          </div>
+                        );
+                      })}
                     </div>
-                    <div className="text-center p-2 bg-green-50 dark:bg-green-900/30 rounded-lg">
-                      <p className="text-xs text-gray-600 dark:text-gray-400 mb-1">Triple Room</p>
-                      <p className="text-base font-bold text-green-600 dark:text-green-400">
-                        PKR {(hotel.triple_bed_price_per_day || Math.round(hotel.single_bed_price_per_day * 1.6)).toLocaleString('en-PK')}
-                      </p>
-                      <p className="text-xs text-gray-500 dark:text-gray-400">per day</p>
+                  ) : (
+                    <div className="mb-4 p-2 bg-gray-50 dark:bg-gray-700 rounded-lg text-center">
+                      <p className="text-xs text-gray-600 dark:text-gray-400">Room types not configured</p>
                     </div>
-                    <div className="text-center p-2 bg-orange-50 dark:bg-orange-900/30 rounded-lg">
-                      <p className="text-xs text-gray-600 dark:text-gray-400 mb-1">Quad Room</p>
-                      <p className="text-base font-bold text-orange-600 dark:text-orange-400">
-                        PKR {(hotel.quad_bed_price_per_day || Math.round(hotel.single_bed_price_per_day * 1.7)).toLocaleString('en-PK')}
-                      </p>
-                      <p className="text-xs text-gray-500 dark:text-gray-400">per day</p>
-                    </div>
-                    <div className="text-center p-2 bg-purple-50 dark:bg-purple-900/30 rounded-lg">
-                      <p className="text-xs text-gray-600 dark:text-gray-400 mb-1">Family Room</p>
-                      <p className="text-base font-bold text-purple-600 dark:text-purple-400">
-                        PKR {hotel.family_room_price_per_day.toLocaleString('en-PK')}
-                      </p>
-                      <p className="text-xs text-gray-500 dark:text-gray-400">per day</p>
-                    </div>
-                  </div>
+                  )}
 
-                  {/* Booking Buttons - 4 Types */}
-                  <div className="grid grid-cols-2 gap-2">
+                  {/* Booking Buttons - Dynamic Room Types */}
+                  {(hotel.room_types || []).length > 0 ? (
+                    <div className="grid grid-cols-2 gap-2">
+                      {hotel.room_types.map((rt) => {
+                        const colors = {
+                          single: 'bg-blue-600 hover:bg-blue-700',
+                          double: 'bg-green-600 hover:bg-green-700',
+                          triple: 'bg-orange-600 hover:bg-orange-700',
+                          quad: 'bg-yellow-600 hover:bg-yellow-700',
+                          family: 'bg-purple-600 hover:bg-purple-700',
+                        };
+                        const btnColor = colors[rt.type] || colors.single;
+                        return (
+                          <button
+                            key={rt.id}
+                            onClick={() => handleBookRoom(hotel, rt.type)}
+                            disabled={rt.available_rooms === 0}
+                            className={`py-2 ${btnColor} text-white rounded-lg font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed text-xs capitalize`}
+                          >
+                            Book {rt.type}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  ) : (
                     <button
-                      onClick={() => handleBookRoom(hotel, 'double')}
+                      onClick={() => handleBookRoom(hotel, 'single')}
                       disabled={hotel.available_rooms === 0}
-                      className="py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed text-xs"
+                      className="w-full py-2 bg-sky-600 hover:bg-sky-700 text-white rounded-lg font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed text-xs"
+                      title={hotel.available_rooms === 0 ? 'No rooms available' : 'Book now'}
                     >
-                      Book Double
+                      Book Now
                     </button>
-                    <button
-                      onClick={() => handleBookRoom(hotel, 'triple')}
-                      disabled={hotel.available_rooms === 0}
-                      className="py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed text-xs"
-                    >
-                      Book Triple
-                    </button>
-                    <button
-                      onClick={() => handleBookRoom(hotel, 'quad')}
-                      disabled={hotel.available_rooms === 0}
-                      className="py-2 bg-orange-600 hover:bg-orange-700 text-white rounded-lg font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed text-xs"
-                    >
-                      Book Quad
-                    </button>
-                    <button
-                      onClick={() => handleBookRoom(hotel, 'family')}
-                      disabled={hotel.available_rooms === 0}
-                      className="py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed text-xs"
-                    >
-                      Book Family
-                    </button>
-                  </div>
+                  )}
                 </div>
               </motion.div>
             ))}

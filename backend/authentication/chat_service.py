@@ -5,13 +5,28 @@ from django.conf import settings
 
 logger = logging.getLogger(__name__)
 
-# Import emotion service
-try:
-    from .emotion_service import emotion_service
-    EMOTION_SERVICE_AVAILABLE = True
-except ImportError:
-    EMOTION_SERVICE_AVAILABLE = False
-    logger.warning("Emotion service not available")
+# Lazy import emotion service - will be imported only when needed
+_emotion_service = None
+_EMOTION_SERVICE_AVAILABLE = True  # Assume available, check on first use
+
+
+def _get_emotion_service():
+    """Lazy load emotion service on first use"""
+    global _emotion_service, _EMOTION_SERVICE_AVAILABLE
+    
+    if _emotion_service is not None:
+        return _emotion_service
+    
+    try:
+        from .emotion_service import emotion_service
+        _emotion_service = emotion_service
+        _EMOTION_SERVICE_AVAILABLE = True
+        return _emotion_service
+    except Exception as e:
+        logger.warning(f"Could not import emotion service: {e}")
+        _EMOTION_SERVICE_AVAILABLE = False
+        return None
+
 
 def get_ai_response(message):
     """Get response from AI using emotion detection and smart recommendations."""
@@ -20,7 +35,8 @@ def get_ai_response(message):
     detected_emotion = None
     emotion_confidence = 0.0
     
-    if EMOTION_SERVICE_AVAILABLE:
+    emotion_service = _get_emotion_service()
+    if emotion_service and _EMOTION_SERVICE_AVAILABLE:
         try:
             detected_emotion, emotion_confidence = emotion_service.detect_emotion(message)
             logger.info(f"Detected emotion: {detected_emotion} (confidence: {emotion_confidence:.2f})")

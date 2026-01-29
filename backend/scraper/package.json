@@ -1,0 +1,22 @@
+{
+  "name": "travello-scraper",
+  "version": "1.0.0",
+  "description": "Web scraper for hotel data using Puppeteer",
+  "main": "puppeteer_scraper.js",
+  "scripts": {
+    "scrape": "node puppeteer_scraper.js"
+  },
+  "dependencies": {
+    "puppeteer": "^24.15.0",
+    "puppeteer-extra": "^3.3.6",
+    "puppeteer-extra-plugin-stealth": "^2.11.2"
+  },
+  "devDependencies": {},
+  "keywords": [
+    "scraping",
+    "puppeteer",
+    "hotels"
+  ],
+  "author": "Travello",
+  "license": "MIT"
+}

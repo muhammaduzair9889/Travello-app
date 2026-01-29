@@ -56,9 +56,14 @@ const features = [
     description: 'Discover tours and activities.',
   },
   {
-    name: 'Bookings',
+    name: 'My Bookings',
     icon: FaBook,
-    description: 'Manage your bookings in one place.',
+    description: 'View and manage your bookings.',
+  },
+  {
+    name: 'Browse Hotels',
+    icon: FaSearch,
+    description: 'Browse all available hotels.',
   },
   {
     name: 'Smart Packing Checklist',
@@ -485,6 +490,7 @@ const InteractiveMap = () => {
 
 // Professional Sidebar Component
 const Sidebar = ({ activeFeature, setActiveFeature }) => {
+  const navigate = useNavigate();
   return (
     <aside className="hidden md:flex flex-col bg-white dark:bg-gray-800 shadow-lg h-full w-64 border-r border-gray-200 dark:border-gray-700 transition-colors duration-300">
       {/* Logo Section */}
@@ -514,7 +520,15 @@ const Sidebar = ({ activeFeature, setActiveFeature }) => {
                     ? 'bg-sky-50 dark:bg-sky-900/30 text-sky-700 dark:text-sky-300 border border-sky-200 dark:border-sky-700'
                     : 'text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700'
                 }`}
-                onClick={() => setActiveFeature(feature.name)}
+                onClick={() => {
+                  if (feature.name === 'Browse Hotels') {
+                    navigate('/hotels');
+                  } else if (feature.name === 'My Bookings') {
+                    navigate('/my-bookings');
+                  } else {
+                    setActiveFeature(feature.name);
+                  }
+                }}
                 style={{ fontFamily: 'Inter, sans-serif' }}
               >
                 <Icon className={`text-lg ${isActive ? 'text-blue-600 dark:text-blue-400' : 'text-gray-500 dark:text-gray-400'}`} />
@@ -606,29 +620,118 @@ const Dashboard = () => {
   const [children, setChildren] = useState(0);
   const [infants, setInfants] = useState(0);
   const [roomType, setRoomType] = useState('double');
+  const [roomTypeTouched, setRoomTypeTouched] = useState(false);
+  const [filtersActive, setFiltersActive] = useState(false);
+  const [availabilityCache, setAvailabilityCache] = useState({});
+  const [availabilityChecking, setAvailabilityChecking] = useState(false);
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [hotels, setHotels] = useState([]);
   const [filteredHotels, setFilteredHotels] = useState([]);
   const [bookings, setBookings] = useState([]);
   const [loadingHotels, setLoadingHotels] = useState(false);
   const [loadingBookings, setLoadingBookings] = useState(false);
+  const [cancelling, setCancelling] = useState(null);
   
   const suggestions = ['Dubai', 'London', 'Bangkok', 'Paris', 'New York', 'Singapore'];
 
   useEffect(() => {
     if (activeFeature === 'Hotels') {
       fetchHotels();
-    } else if (activeFeature === 'Bookings') {
+    } else if (activeFeature === 'My Bookings') {
       fetchBookings();
     }
   }, [activeFeature]);
+
+  const applyHotelFilters = (list) => {
+    if (!filtersActive) return list || [];
+
+    const query = destination.trim().toLowerCase();
+    const hasDateFilter = Boolean(checkIn || checkOut);
+
+    return (list || []).filter((hotel) => {
+      const matchesDestination = query
+        ? [hotel.name, hotel.city, hotel.address]
+            .filter(Boolean)
+            .some((val) => val.toLowerCase().includes(query))
+        : true;
+
+      const matchesRoomType = roomTypeTouched && roomType
+        ? (hotel.room_types || []).some((rt) => rt.type === roomType)
+        : true;
+
+      const matchesDates = hasDateFilter
+        ? Number(hotel.available_rooms ?? hotel.total_rooms ?? 0) > 0
+        : true;
+
+      return matchesDestination && matchesRoomType && matchesDates;
+    });
+  };
+
+  const getAvailabilityKey = (hotelId, roomTypeId) => `${hotelId}-${roomTypeId}-${checkIn || 'none'}-${checkOut || 'none'}`;
+
+  const fetchRoomAvailability = async (hotel, selectedRoomType) => {
+    if (!checkIn || !checkOut || !selectedRoomType?.id) {
+      return selectedRoomType?.available_rooms ?? hotel.available_rooms ?? 0;
+    }
+
+    // Skip availability check for scraped hotels - they're always "available"
+    if (hotel.is_scraped || hotel.scraped_data || String(hotel.id).startsWith('scraped-')) {
+      return selectedRoomType?.available_rooms ?? 10;
+    }
+
+    const cacheKey = getAvailabilityKey(hotel.id, selectedRoomType.id);
+    if (availabilityCache[cacheKey] !== undefined) {
+      return availabilityCache[cacheKey];
+    }
+
+    try {
+      const response = await hotelAPI.checkAvailability({
+        hotel: hotel.id,
+        room_type: selectedRoomType.id,
+        check_in: checkIn,
+        check_out: checkOut,
+        rooms_needed: 1,
+      });
+
+      const availableFromApi = response.data?.data?.room_types?.find((rt) => rt.id === selectedRoomType.id)?.available_rooms;
+      const resolved = availableFromApi ?? response.data?.available_rooms ?? selectedRoomType.available_rooms ?? 0;
+
+      setAvailabilityCache((prev) => ({ ...prev, [cacheKey]: resolved }));
+      return resolved;
+    } catch (err) {
+      console.error('Availability check failed for hotel', hotel.id, err);
+      return selectedRoomType.available_rooms ?? hotel.available_rooms ?? 0;
+    }
+  };
+
+  const filterByAvailability = async (list) => {
+    if (!checkIn || !checkOut || !roomType) return list || [];
+
+    setAvailabilityChecking(true);
+    try {
+      const checked = await Promise.all(
+        (list || []).map(async (hotel) => {
+          const rt = (hotel.room_types || []).find((r) => r.type === roomType);
+          if (!rt) return null;
+          const available = await fetchRoomAvailability(hotel, rt);
+          return available > 0 ? hotel : null;
+        })
+      );
+      return checked.filter(Boolean);
+    } finally {
+      setAvailabilityChecking(false);
+    }
+  };
 
   const fetchHotels = async () => {
     setLoadingHotels(true);
     try {
       const response = await hotelAPI.getAllHotels();
-      setHotels(response.data);
-      setFilteredHotels(response.data);
+      const data = response.data || [];
+      setHotels(data);
+      const base = applyHotelFilters(data);
+      const finalList = checkIn && checkOut && roomType ? await filterByAvailability(base) : base;
+      setFilteredHotels(finalList);
     } catch (error) {
       console.error('Error fetching hotels:', error);
     } finally {
@@ -648,16 +751,77 @@ const Dashboard = () => {
     }
   };
 
+  const handleCancelBooking = async (bookingId) => {
+    if (!window.confirm('Are you sure you want to cancel this booking?')) {
+      return;
+    }
+
+    setCancelling(bookingId);
+    try {
+      await bookingAPI.cancelBooking(bookingId);
+      // Refresh bookings list
+      await fetchBookings();
+    } catch (error) {
+      console.error('Error cancelling booking:', error);
+      alert(error.response?.data?.error || 'Failed to cancel booking. Please try again.');
+    } finally {
+      setCancelling(null);
+    }
+  };
+
+  const getStatusBadge = (status) => {
+    const statusConfig = {
+      PENDING: {
+        icon: FaClock,
+        bgColor: 'bg-yellow-100 dark:bg-yellow-900/30',
+        textColor: 'text-yellow-700 dark:text-yellow-400',
+        label: 'Pending'
+      },
+      PAID: {
+        icon: FaCheckCircle,
+        bgColor: 'bg-green-100 dark:bg-green-900/30',
+        textColor: 'text-green-700 dark:text-green-400',
+        label: 'Paid'
+      },
+      CONFIRMED: {
+        icon: FaCheckCircle,
+        bgColor: 'bg-blue-100 dark:bg-blue-900/30',
+        textColor: 'text-blue-700 dark:text-blue-400',
+        label: 'Confirmed'
+      },
+      COMPLETED: {
+        icon: FaCheckCircle,
+        bgColor: 'bg-green-100 dark:bg-green-900/30',
+        textColor: 'text-green-700 dark:text-green-400',
+        label: 'Completed'
+      },
+      CANCELLED: {
+        icon: FaClock,
+        bgColor: 'bg-red-100 dark:bg-red-900/30',
+        textColor: 'text-red-700 dark:text-red-400',
+        label: 'Cancelled'
+      }
+    };
+    const config = statusConfig[status] || statusConfig.PENDING;
+    return { ...config, Icon: config.icon };
+  };
+
+  const getPaymentMethodLabel = (method) => {
+    const methods = { ONLINE: 'Online Payment', ARRIVAL: 'Pay on Arrival' };
+    return methods[method] || method;
+  };
+
   const handleSearchHotels = async (e) => {
     e.preventDefault();
-    
+    setFiltersActive(true);
+    setRoomTypeTouched(true);
     setLoadingHotels(true);
     
     try {
-      // Import the search function
-      const { searchLahoreHotels } = await import('../services/hotelSearchAPI');
+      const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:8000';
       
-      console.log('🔍 Calling API with params:', {
+      console.log('🔍 Scraping hotels with params:', {
+        destination,
         checkIn,
         checkOut,
         adults: parseInt(adults),
@@ -665,47 +829,221 @@ const Dashboard = () => {
         roomType
       });
       
-      // Call the Lahore hotel search API
-      const results = await searchLahoreHotels({
-        checkIn: checkIn,
-        checkOut: checkOut,
-        adults: parseInt(adults),
-        children: parseInt(children),
-        infants: parseInt(infants),
-        roomType: roomType
+      // Call web scraping API
+      const response = await fetch(`http://localhost:8000/api/scraper/scrape-hotels/`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          city: destination || 'Lahore',
+          checkin: checkIn,
+          checkout: checkOut,
+          adults: parseInt(adults),
+          rooms: 1,
+          children: parseInt(children),
+          use_cache: true
+        })
       });
       
-      console.log('✅ Hotels received from API:', results.length, 'hotels');
+      const data = await response.json();
       
-      if (results && results.length > 0) {
-        setFilteredHotels(results);
-        setHotels(results);
+      if (data.success && data.hotels && data.hotels.length > 0) {
+        console.log('✅ Scraped hotels:', data.count, 'hotels');
+        
+        // Transform scraped data to match your hotel format - WITH DYNAMIC AVAILABILITY
+        const transformedHotels = data.hotels.map((hotel, index) => {
+          // Extract price from hotel data
+          const pricePerNight = hotel.price ? parseFloat(hotel.price.replace(/[^0-9.]/g, '')) || 5000 : 5000;
+          
+          // Generate realistic availability based on hotel rating and price
+          const generateAvailability = (rating, basePrice) => {
+            // Higher rated/priced hotels tend to have fewer available rooms
+            const ratingFactor = parseFloat(rating) || 7.5;
+            const priceFactor = basePrice > 15000 ? 0.6 : basePrice > 10000 ? 0.75 : 0.9;
+            
+            // Total rooms based on hotel tier
+            const totalRooms = basePrice > 15000 ? 50 : basePrice > 10000 ? 40 : basePrice > 7000 ? 35 : 30;
+            
+            // Available rooms: popular hotels (high rating) have less availability
+            const availabilityRate = ratingFactor > 8.5 ? 0.5 : ratingFactor > 8.0 ? 0.65 : 0.8;
+            const availableRooms = Math.round(totalRooms * availabilityRate * priceFactor);
+            
+            return { totalRooms, availableRooms };
+          };
+          
+          const { totalRooms, availableRooms } = generateAvailability(hotel.rating, pricePerNight);
+          
+          // Create multiple room types with varied pricing and availability
+          const createRoomTypes = () => {
+            const basePrice = pricePerNight;
+            const roomAvailability = Math.max(3, Math.floor(availableRooms / 4)); // Distribute availability
+            
+            return [
+              {
+                id: `${index}-single`,
+                type: 'single',
+                price_per_night: Math.round(basePrice * 0.8), // 20% less
+                capacity: 1,
+                available_rooms: Math.max(2, Math.floor(roomAvailability * 1.2)),
+                total_rooms: Math.floor(totalRooms * 0.3),
+                description: hotel.amenities?.slice(0, 2).join(', ') || 'Standard amenities',
+                amenities: hotel.amenities || []
+              },
+              {
+                id: `${index}-double`,
+                type: 'double',
+                price_per_night: basePrice,
+                capacity: 2,
+                available_rooms: roomAvailability,
+                total_rooms: Math.floor(totalRooms * 0.4),
+                description: hotel.amenities?.slice(0, 3).join(', ') || 'Standard amenities',
+                amenities: hotel.amenities || []
+              },
+              {
+                id: `${index}-triple`,
+                type: 'triple',
+                price_per_night: Math.round(basePrice * 1.3), // 30% more
+                capacity: 3,
+                available_rooms: Math.max(1, Math.floor(roomAvailability * 0.8)),
+                total_rooms: Math.floor(totalRooms * 0.2),
+                description: hotel.amenities?.slice(0, 4).join(', ') || 'Standard amenities',
+                amenities: hotel.amenities || []
+              },
+              {
+                id: `${index}-quad`,
+                type: 'quad',
+                price_per_night: Math.round(basePrice * 1.5), // 50% more
+                capacity: 4,
+                available_rooms: Math.max(1, Math.floor(roomAvailability * 0.6)),
+                total_rooms: Math.floor(totalRooms * 0.1),
+                description: hotel.amenities?.join(', ') || 'Standard amenities',
+                amenities: hotel.amenities || []
+              }
+            ];
+          };
+          
+          return {
+            id: `scraped-${index}`,
+            name: hotel.name || 'Hotel',
+            hotel_name: hotel.name || 'Hotel', // For booking page compatibility
+            city: destination || data.search_params?.city || 'Lahore',
+            address: hotel.location || hotel.distance || '',
+            location: hotel.location || hotel.distance || '', // For booking page compatibility
+            description: `${hotel.amenities?.join(', ') || 'No amenities listed'}`,
+            rating: parseFloat(hotel.rating) || 0,
+            total_rooms: totalRooms,
+            available_rooms: availableRooms,
+            room_types: createRoomTypes(),
+            image: hotel.image_url || 'https://via.placeholder.com/400x300?text=Hotel',
+            scraped_data: hotel,
+            review_count: hotel.review_count || '0 reviews',
+            distance_from_center: hotel.distance || '',
+            check_in_instructions: hotel.check_in_instructions || 'Standard check-in: 2 PM',
+            policies: hotel.policies || 'Free cancellation 24 hours before check-in',
+            wifi_available: hotel.amenities?.some(a => a.toLowerCase().includes('wifi')) || false,
+            parking_available: hotel.amenities?.some(a => a.toLowerCase().includes('parking')) || false,
+            // Add pricing fields for booking compatibility
+            single_bed_price_per_day: Math.round(pricePerNight * 0.8),
+            double_bed_price_per_day: pricePerNight,
+            triple_bed_price_per_day: Math.round(pricePerNight * 1.3),
+            quad_bed_price_per_day: Math.round(pricePerNight * 1.5),
+            is_scraped: true
+          };
+        });
+        
+        setHotels(transformedHotels);
+        setFilteredHotels(transformedHotels);
         console.log('✅ Hotels displayed successfully');
       } else {
-        console.warn('⚠️ No hotels found');
-        setFilteredHotels([]);
-        alert('No hotels found for these dates. Try different dates or contact support.');
+        console.warn('⚠️ No hotels found:', data.message);
+        
+        // Fallback to database hotels if scraping fails or returns no results
+        console.log('📦 Falling back to database hotels...');
+        const dbResponse = await hotelAPI.getAllHotels();
+        const dbHotels = dbResponse.data || [];
+        setHotels(dbHotels);
+        const base = applyHotelFilters(dbHotels);
+        const finalList = checkIn && checkOut && roomType ? await filterByAvailability(base) : base;
+        setFilteredHotels(finalList);
+        
+        if (data.message) {
+          alert(`Scraping info: ${data.message}\n\nShowing available hotels from database.`);
+        }
       }
       
     } catch (error) {
-      console.error('❌ Error searching hotels:', error);
-      alert('Failed to fetch hotels: ' + (error.message || 'Backend server not running. Please start Django server on port 8000.'));
-      setFilteredHotels([]);
+      console.error('❌ Error during hotel search:', error);
+      
+      // Fallback to database on error
+      try {
+        console.log('📦 Falling back to database hotels due to error...');
+        const dbResponse = await hotelAPI.getAllHotels();
+        const dbHotels = dbResponse.data || [];
+        setHotels(dbHotels);
+        const base = applyHotelFilters(dbHotels);
+        const finalList = checkIn && checkOut && roomType ? await filterByAvailability(base) : base;
+        setFilteredHotels(finalList);
+        
+        alert('Scraping unavailable. Showing hotels from database.\n\nTip: Make sure Django server is running on port 8000.');
+      } catch (dbError) {
+        console.error('❌ Database fallback also failed:', dbError);
+        setFilteredHotels([]);
+        alert('Unable to fetch hotels. Please ensure the backend server is running.');
+      }
     } finally {
       setLoadingHotels(false);
     }
   };
 
   const handleBookRoom = (hotel, roomType) => {
-    navigate('/hotel-booking', { 
-      state: { 
-        hotel, 
-        roomType,
-        checkIn,
-        checkOut 
-      } 
-    });
+    // If no dates selected, use tomorrow and day after as defaults
+    const today = new Date();
+    const tomorrow = new Date(today);
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    const dayAfter = new Date(tomorrow);
+    dayAfter.setDate(dayAfter.getDate() + 1);
+    
+    const defaultCheckIn = checkIn || tomorrow.toISOString().split('T')[0];
+    const defaultCheckOut = checkOut || dayAfter.toISOString().split('T')[0];
+    
+    // For scraped hotels, pass data directly. For database hotels, use ID route
+    if (hotel.is_scraped) {
+      navigate('/hotel-booking', {
+        state: {
+          hotel: hotel,
+          roomType: roomType,
+          checkIn: defaultCheckIn,
+          checkOut: defaultCheckOut,
+          adults: adults,
+          children: children,
+          infants: infants,
+        },
+      });
+    } else {
+      navigate(`/hotels/${hotel.id}`, {
+        state: {
+          roomType,
+          checkIn: defaultCheckIn,
+          checkOut: defaultCheckOut,
+          adults,
+          children,
+          infants,
+        },
+      });
+    }
   };
+
+  useEffect(() => {
+    let isMounted = true;
+    const reapply = async () => {
+      const base = applyHotelFilters(hotels);
+      const finalList = checkIn && checkOut && roomTypeTouched ? await filterByAvailability(base) : base;
+      if (isMounted) setFilteredHotels(finalList);
+    };
+    reapply();
+    return () => { isMounted = false; };
+  }, [hotels, filtersActive, destination, roomType, roomTypeTouched, checkIn, checkOut]);
 
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900 flex flex-col transition-colors duration-300">
@@ -753,6 +1091,7 @@ const Dashboard = () => {
                         onChange={(e) => {
                           setDestination(e.target.value);
                           setShowSuggestions(true);
+                          setFiltersActive(true);
                         }}
                         onFocus={() => setShowSuggestions(true)}
                         onBlur={() => setTimeout(() => setShowSuggestions(false), 150)}
@@ -796,7 +1135,10 @@ const Dashboard = () => {
                           type="date"
                           className="w-full pl-10 pr-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white transition-colors"
                           value={checkIn}
-                          onChange={(e) => setCheckIn(e.target.value)}
+                          onChange={(e) => {
+                            setCheckIn(e.target.value);
+                            setFiltersActive(true);
+                          }}
                           style={{ fontFamily: 'Inter, sans-serif' }}
                         />
                       </div>
@@ -814,7 +1156,10 @@ const Dashboard = () => {
                           type="date"
                           className="w-full pl-10 pr-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white transition-colors"
                           value={checkOut}
-                          onChange={(e) => setCheckOut(e.target.value)}
+                          onChange={(e) => {
+                            setCheckOut(e.target.value);
+                            setFiltersActive(true);
+                          }}
                           style={{ fontFamily: 'Inter, sans-serif' }}
                         />
                       </div>
@@ -908,7 +1253,11 @@ const Dashboard = () => {
                               ? 'bg-sky-600 dark:bg-sky-500 text-white border-2 border-sky-600 dark:border-sky-500'
                               : 'bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-300 border-2 border-gray-300 dark:border-gray-600 hover:border-sky-300 dark:hover:border-sky-500'
                           }`}
-                          onClick={() => setRoomType(rt.value)}
+                          onClick={() => {
+                            setRoomType(rt.value);
+                            setRoomTypeTouched(true);
+                            setFiltersActive(true);
+                          }}
                           style={{ fontFamily: 'Inter, sans-serif' }}
                         >
                           {rt.label}
@@ -932,10 +1281,15 @@ const Dashboard = () => {
               </div>
 
               {/* Hotels List */}
-              {loadingHotels ? (
-                <div className="text-center py-12 mt-8">
+              {loadingHotels || availabilityChecking ? (
+                <div className="text-center py-12 mt-8 bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700">
                   <div className="animate-spin rounded-full h-16 w-16 border-b-2 border-sky-600 mx-auto mb-4"></div>
-                  <p className="text-gray-600 dark:text-gray-400">Loading hotels...</p>
+                  <p className="text-gray-600 dark:text-gray-400 font-semibold mb-2">
+                    {loadingHotels ? '🔍 Scraping Hotels from Booking.com...' : 'Checking date availability...'}
+                  </p>
+                  <p className="text-sm text-gray-500 dark:text-gray-500">
+                    {loadingHotels ? 'This may take 30-60 seconds. Getting real-time data for you!' : 'Please wait...'}
+                  </p>
                 </div>
               ) : filteredHotels.length > 0 ? (
                 <div className="mt-8">
@@ -943,122 +1297,209 @@ const Dashboard = () => {
                     Available Hotels ({filteredHotels.length})
                   </h3>
                   <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                    {filteredHotels.map((hotel) => (
-                      <motion.div
-                        key={hotel.id}
-                        initial={{ opacity: 0, y: 20 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        className="bg-white dark:bg-gray-800 rounded-xl shadow-lg overflow-hidden border border-gray-200 dark:border-gray-700 hover:shadow-xl transition-shadow"
-                      >
-                        {/* Hotel Image */}
-                        <div className="h-48 bg-gradient-to-r from-sky-400 to-blue-500 relative overflow-hidden">
-                          {hotel.image ? (
-                            <img
-                              src={hotel.image}
-                              alt={hotel.hotel_name}
-                              className="w-full h-full object-cover"
-                            />
-                          ) : (
-                            <div className="w-full h-full flex items-center justify-center text-white text-4xl font-bold">
-                              {hotel.hotel_name.charAt(0)}
-                            </div>
-                          )}
-                          <div className="absolute top-4 right-4 bg-white dark:bg-gray-800 px-3 py-1 rounded-full flex items-center gap-1">
-                            <FaStar className="text-yellow-500" />
-                            <span className="font-semibold text-gray-800 dark:text-white">
-                              {hotel.rating.toFixed(1)}
-                            </span>
-                          </div>
-                        </div>
+                    {filteredHotels.map((hotel) => {
+                      const roomTypes = hotel.room_types || [];
+                      const colors = {
+                        single: { bg: 'bg-blue-50 dark:bg-blue-900/30', text: 'text-blue-600 dark:text-blue-400', btn: 'bg-blue-600 hover:bg-blue-700' },
+                        double: { bg: 'bg-green-50 dark:bg-green-900/30', text: 'text-green-600 dark:text-green-400', btn: 'bg-green-600 hover:bg-green-700' },
+                        triple: { bg: 'bg-orange-50 dark:bg-orange-900/30', text: 'text-orange-600 dark:text-orange-400', btn: 'bg-orange-600 hover:bg-orange-700' },
+                        quad: { bg: 'bg-yellow-50 dark:bg-yellow-900/30', text: 'text-yellow-600 dark:text-yellow-400', btn: 'bg-yellow-600 hover:bg-yellow-700' },
+                        family: { bg: 'bg-purple-50 dark:bg-purple-900/30', text: 'text-purple-600 dark:text-purple-400', btn: 'bg-purple-600 hover:bg-purple-700' },
+                      };
 
-                        {/* Hotel Details */}
-                        <div className="p-6">
-                          <h3 className="text-xl font-bold text-gray-800 dark:text-white mb-2">
-                            {hotel.hotel_name}
-                          </h3>
-                          
-                          <div className="flex items-center gap-2 text-gray-600 dark:text-gray-400 mb-1">
-                            <FaMapMarkerAlt className="text-sky-600" />
-                            <span className="text-sm font-semibold">{hotel.city}</span>
-                          </div>
-                          
-                          <p className="text-sm text-gray-600 dark:text-gray-400 mb-3">
-                            {hotel.location}
-                          </p>
-
-                          <p className="text-sm text-gray-600 dark:text-gray-400 mb-4 line-clamp-2">
-                            {hotel.description}
-                          </p>
-
-                          {/* Amenities */}
-                          <div className="flex gap-3 mb-4">
-                            {hotel.wifi_available && (
-                              <div className="flex items-center gap-1 text-sm text-gray-600 dark:text-gray-400">
-                                <FaWifi className="text-sky-600" />
-                                <span>WiFi</span>
+                      return (
+                        <motion.div
+                          key={hotel.id}
+                          initial={{ opacity: 0, y: 20 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          className="bg-white dark:bg-gray-800 rounded-xl shadow-lg overflow-hidden border border-gray-200 dark:border-gray-700 hover:shadow-xl transition-shadow"
+                        >
+                          {/* Hotel Image */}
+                          <div className="h-48 bg-gradient-to-r from-sky-400 to-blue-500 relative overflow-hidden">
+                            {hotel.image ? (
+                              <img
+                                src={hotel.image}
+                                alt={hotel.name || 'Hotel'}
+                                className="w-full h-full object-cover"
+                                onError={(e) => {
+                                  e.target.onerror = null;
+                                  e.target.src = 'https://via.placeholder.com/400x300?text=Hotel+Image';
+                                }}
+                              />
+                            ) : (
+                              <div className="w-full h-full flex items-center justify-center text-white text-4xl font-bold">
+                                {(hotel.name || 'H').charAt(0)}
                               </div>
                             )}
-                            {hotel.parking_available && (
-                              <div className="flex items-center gap-1 text-sm text-gray-600 dark:text-gray-400">
-                                <FaParking className="text-sky-600" />
-                                <span>Parking</span>
+                            {/* Live Data Badge */}
+                            {hotel.scraped_data && (
+                              <div className="absolute top-4 left-4 bg-green-500 text-white px-3 py-1 rounded-full text-xs font-semibold flex items-center gap-1">
+                                <span>🔴 LIVE</span>
+                              </div>
+                            )}
+                            {/* Rating Badge */}
+                            <div className="absolute top-4 right-4 bg-white dark:bg-gray-800 px-3 py-1 rounded-full flex items-center gap-1">
+                              <FaStar className="text-yellow-500" />
+                              <span className="font-semibold text-gray-800 dark:text-white">
+                                {Number(hotel.rating ?? 0).toFixed(1)}
+                              </span>
+                            </div>
+                          </div>
+
+                          {/* Hotel Details */}
+                          <div className="p-6">
+                            <h3 className="text-xl font-bold text-gray-800 dark:text-white mb-2">
+                              {hotel.name || 'Hotel'}
+                            </h3>
+                            
+                            <div className="flex items-center gap-2 text-gray-600 dark:text-gray-400 mb-2">
+                              <FaMapMarkerAlt className="text-sky-600" />
+                              <span className="text-sm">{hotel.city || hotel.address || 'Location'}</span>
+                            </div>
+                            
+                            {/* Review Count & Distance for scraped hotels */}
+                            {hotel.scraped_data && (
+                              <div className="flex flex-col gap-1 mb-3">
+                                {hotel.review_count && (
+                                  <div className="text-xs text-gray-500 dark:text-gray-400">
+                                    📝 {hotel.review_count}
+                                  </div>
+                                )}
+                                {hotel.distance_from_center && (
+                                  <div className="text-xs text-gray-500 dark:text-gray-400">
+                                    📍 {hotel.distance_from_center}
+                                  </div>
+                                )}
+                                {hotel.check_in_instructions && (
+                                  <div className="text-xs text-blue-600 dark:text-blue-400 mt-1">
+                                    ℹ️ {hotel.check_in_instructions}
+                                  </div>
+                                )}
+                                {hotel.policies && (
+                                  <div className="text-xs text-green-600 dark:text-green-400">
+                                    ✓ {hotel.policies}
+                                  </div>
+                                )}
+                              </div>
+                            )}
+                            
+                            {!hotel.scraped_data && (
+                              <>
+                                <div className="flex items-center gap-2 text-gray-600 dark:text-gray-400 mb-3">
+                                  <FaMapMarkerAlt className="text-sky-600" />
+                                  <span className="text-sm">{hotel.city}</span>
+                                </div>
+
+                                <p className="text-sm text-gray-600 dark:text-gray-400 mb-4 line-clamp-2">
+                                  {hotel.description}
+                                </p>
+                              </>
+                            )}
+
+                            {/* Amenities */}
+                            <div className="flex flex-wrap gap-3 mb-4">
+                              {hotel.wifi_available && (
+                                <div className="flex items-center gap-1 text-sm text-gray-600 dark:text-gray-400">
+                                  <FaWifi className="text-sky-600" />
+                                  <span>WiFi</span>
+                                </div>
+                              )}
+                              {hotel.parking_available && (
+                                <div className="flex items-center gap-1 text-sm text-gray-600 dark:text-gray-400">
+                                  <FaParking className="text-sky-600" />
+                                  <span>Parking</span>
+                                </div>
+                              )}
+                            </div>
+
+                            {/* Availability */}
+                            <div className="mb-4 p-3 bg-gray-50 dark:bg-gray-700 rounded-lg">
+                              <p className="text-sm text-gray-600 dark:text-gray-400">
+                                Available Rooms: <span className="font-semibold text-gray-800 dark:text-white">{hotel.available_rooms}</span> / {hotel.total_rooms}
+                              </p>
+                            </div>
+
+                            {/* Pricing - Room Types */}
+                            {roomTypes.length > 0 ? (
+                              <div className="grid grid-cols-2 gap-2 mb-4">
+                                {roomTypes.slice(0, 4).map((rt) => {
+                                  const color = colors[rt.type] || colors.single;
+                                  return (
+                                    <div key={rt.id} className={`text-center p-2 ${color.bg} rounded-lg`}>
+                                      <p className="text-xs text-gray-600 dark:text-gray-400 mb-1 capitalize">{rt.type} Room</p>
+                                      <p className={`text-base font-bold ${color.text}`}>
+                                        PKR {Number(rt.price_per_night).toLocaleString('en-PK')}
+                                      </p>
+                                      <p className="text-xs text-gray-500 dark:text-gray-400">per day</p>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            ) : (
+                              <div className="mb-4 p-2 bg-gray-50 dark:bg-gray-700 rounded-lg text-center">
+                                <p className="text-xs text-gray-600 dark:text-gray-400">Room types not configured</p>
+                              </div>
+                            )}
+
+                            {/* Booking Buttons - Dynamic Room Types */}
+                            {roomTypes.length > 0 ? (
+                              <div className="space-y-2">
+                                <div className="grid grid-cols-2 gap-2">
+                                  {roomTypes.map((rt) => {
+                                    const btnColor = (colors[rt.type] || colors.single).btn;
+                                    return (
+                                      <button
+                                        key={rt.id}
+                                        onClick={() => handleBookRoom(hotel, rt.type)}
+                                        disabled={rt.available_rooms === 0}
+                                        className={`py-2 ${btnColor} text-white rounded-lg font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed text-xs capitalize`}
+                                      >
+                                        Book {rt.type}
+                                      </button>
+                                    );
+                                  })}
+                                </div>
+                              </div>
+                            ) : (
+                              <div className="space-y-2">
+                                <button
+                                  onClick={() => handleBookRoom(hotel, 'single')}
+                                  disabled={hotel.available_rooms === 0}
+                                  className="w-full py-2 bg-sky-600 hover:bg-sky-700 text-white rounded-lg font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed text-xs"
+                                  title={hotel.available_rooms === 0 ? 'No rooms available' : 'Book now'}
+                                >
+                                  Book Now
+                                </button>
                               </div>
                             )}
                           </div>
-
-                          {/* Availability */}
-                          <div className="mb-4 p-3 bg-gray-50 dark:bg-gray-700 rounded-lg">
-                            <p className="text-sm text-gray-600 dark:text-gray-400">
-                              Available Rooms: <span className="font-semibold text-gray-800 dark:text-white">{hotel.available_rooms}</span> / {hotel.total_rooms}
-                            </p>
-                          </div>
-
-                          {/* Pricing */}
-                          <div className="grid grid-cols-2 gap-3 mb-4">
-                            <div className="text-center p-3 bg-blue-50 dark:bg-blue-900/30 rounded-lg">
-                              <p className="text-xs text-gray-600 dark:text-gray-400 mb-1">Single Room</p>
-                              <p className="text-lg font-bold text-blue-600 dark:text-blue-400">
-                                PKR {hotel.single_bed_price_per_day.toLocaleString()}
-                              </p>
-                              <p className="text-xs text-gray-500 dark:text-gray-400">per day</p>
-                            </div>
-                            <div className="text-center p-3 bg-purple-50 dark:bg-purple-900/30 rounded-lg">
-                              <p className="text-xs text-gray-600 dark:text-gray-400 mb-1">Family Room</p>
-                              <p className="text-lg font-bold text-purple-600 dark:text-purple-400">
-                                PKR {hotel.family_room_price_per_day.toLocaleString()}
-                              </p>
-                              <p className="text-xs text-gray-500 dark:text-gray-400">per day</p>
-                            </div>
-                          </div>
-
-                          {/* Booking Buttons */}
-                          <div className="grid grid-cols-2 gap-3">
-                            <button
-                              onClick={() => handleBookRoom(hotel, 'single')}
-                              disabled={hotel.available_rooms === 0 || !checkIn || !checkOut}
-                              className="py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed text-sm"
-                            >
-                              Book Single
-                            </button>
-                            <button
-                              onClick={() => handleBookRoom(hotel, 'family')}
-                              disabled={hotel.available_rooms === 0 || !checkIn || !checkOut}
-                              className="py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed text-sm"
-                            >
-                              Book Family
-                            </button>
-                          </div>
-                        </div>
-                      </motion.div>
-                    ))}
+                        </motion.div>
+                      );
+                    })}
                   </div>
                 </div>
               ) : (
-                <div className="text-center py-12 mt-8 bg-white dark:bg-gray-800 rounded-xl">
+                <div className="text-center py-12 mt-8 bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700">
                   <FaHotel className="text-gray-300 dark:text-gray-600 text-6xl mx-auto mb-4" />
-                  <p className="text-gray-500 dark:text-gray-400 text-lg">
-                    {destination ? 'No hotels found in this city' : 'Enter a city to search for hotels'}
+                  <p className="text-gray-500 dark:text-gray-400 text-lg mb-2">
+                    {destination ? '🔍 No hotels found' : 'Enter search details to find hotels'}
                   </p>
+                  {destination && (
+                    <p className="text-sm text-gray-400 dark:text-gray-500 mb-4">
+                      Try different dates or locations. We're scraping real-time data from Booking.com.
+                    </p>
+                  )}
+                  {!destination && (
+                    <div className="max-w-md mx-auto mt-6 text-left bg-blue-50 dark:bg-blue-900/20 rounded-lg p-4">
+                      <p className="text-sm text-blue-800 dark:text-blue-300 font-semibold mb-2">💡 Quick Tip:</p>
+                      <ul className="text-xs text-blue-700 dark:text-blue-400 space-y-1">
+                        <li>• Enter a destination (e.g., Lahore, Karachi)</li>
+                        <li>• Select check-in and check-out dates</li>
+                        <li>• Choose number of guests and room type</li>
+                        <li>• Click "Search Hotels" for real-time results</li>
+                      </ul>
+                    </div>
+                  )}
                 </div>
               )}
 
@@ -1124,7 +1565,7 @@ const Dashboard = () => {
           )}
 
           {/* Bookings Section */}
-          {activeFeature === 'Bookings' && (
+          {activeFeature === 'My Bookings' && (
             <div className="max-w-6xl">
               {loadingBookings ? (
                 <div className="text-center py-12">
@@ -1141,98 +1582,116 @@ const Dashboard = () => {
                     <p className="text-gray-400 dark:text-gray-500 text-sm mt-2" style={{ fontFamily: 'Inter, sans-serif' }}>
                       Your hotel bookings will appear here
                     </p>
+                    <div className="mt-6">
+                      <button
+                        onClick={() => navigate('/hotels')}
+                        className="px-5 py-2 bg-sky-600 hover:bg-sky-700 text-white rounded-lg font-medium transition-colors"
+                      >
+                        Browse Hotels
+                      </button>
+                    </div>
                   </div>
                 </div>
               ) : (
                 <div className="space-y-6">
-                  {bookings.map((booking) => (
-                    <motion.div
-                      key={booking.id}
-                      initial={{ opacity: 0, y: 20 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      className="bg-white dark:bg-gray-800 rounded-xl shadow-lg overflow-hidden border border-gray-200 dark:border-gray-700"
-                    >
-                      <div className="p-6">
-                        <div className="flex flex-col md:flex-row md:items-center md:justify-between mb-4">
-                          <div className="flex items-center gap-4 mb-4 md:mb-0">
-                            <div className="w-16 h-16 bg-gradient-to-r from-sky-400 to-blue-500 rounded-lg flex items-center justify-center text-white text-2xl font-bold">
-                              {booking.hotel_details?.hotel_name?.charAt(0)}
+                  {bookings.map((booking) => {
+                    if (!booking || !booking.id) return null;
+                    const statusCfg = getStatusBadge(booking.status);
+                    const StatusIcon = statusCfg.Icon;
+                    const nights = booking.number_of_nights || Math.ceil((new Date(booking.check_out) - new Date(booking.check_in)) / (1000*60*60*24));
+                    return (
+                      <motion.div
+                        key={booking.id}
+                        initial={{ opacity: 0, y: 20 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        className="bg-white dark:bg-gray-800 rounded-xl shadow-lg overflow-hidden border border-gray-200 dark:border-gray-700"
+                      >
+                        <div className="p-6 border-b border-gray-200 dark:border-gray-700">
+                          <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+                            <div className="flex items-center gap-4">
+                              <div className="w-16 h-16 bg-gradient-to-r from-sky-400 to-blue-500 rounded-lg flex items-center justify-center text-white text-2xl font-bold">
+                                {(booking.hotel_details?.name || 'H').charAt(0).toUpperCase()}
+                              </div>
+                              <div>
+                                <h3 className="text-xl font-bold text-gray-800 dark:text-white">
+                                  {booking.hotel_details?.name || 'Hotel'}
+                                </h3>
+                                <p className="text-sm text-gray-600 dark:text-gray-400">
+                                  {booking.hotel_details?.city || 'N/A'}
+                                </p>
+                              </div>
                             </div>
-                            <div>
-                              <h3 className="text-xl font-bold text-gray-800 dark:text-white">
-                                {booking.hotel_details?.hotel_name}
-                              </h3>
-                              <p className="text-gray-600 dark:text-gray-400">
-                                {booking.hotel_details?.city}, {booking.hotel_details?.location}
-                              </p>
+                            <div className={`flex items-center gap-2 px-4 py-2 rounded-full ${statusCfg.bgColor} ${statusCfg.textColor} font-medium`}>
+                              <StatusIcon className="text-lg" />
+                              <span>{statusCfg.label}</span>
                             </div>
                           </div>
-                          
-                          <div className="flex items-center gap-2">
-                            {booking.payment_status ? (
-                              <span className="px-4 py-2 bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400 rounded-full flex items-center gap-2 font-medium">
-                                <FaCheckCircle />
-                                Confirmed
-                              </span>
-                            ) : (
-                              <span className="px-4 py-2 bg-yellow-100 dark:bg-yellow-900/30 text-yellow-700 dark:text-yellow-400 rounded-full flex items-center gap-2 font-medium">
-                                <FaClock />
-                                Pending Payment
-                              </span>
+                        </div>
+
+                        <div className="p-6">
+                          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+                            <div className="p-4 bg-gray-50 dark:bg-gray-700 rounded-lg">
+                              <p className="text-xs font-semibold text-gray-600 dark:text-gray-400 uppercase tracking-wider mb-2">Room Type</p>
+                              <p className="text-lg font-bold text-gray-800 dark:text-white capitalize">{booking.room_type_details?.type || 'N/A'}</p>
+                              <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">{typeof booking.rooms_booked === 'object' && booking.rooms_booked !== null ? (typeof booking.rooms_booked.rooms_booked === 'number' ? booking.rooms_booked.rooms_booked : 1) : (typeof booking.rooms_booked === 'number' ? booking.rooms_booked : 1)} {(typeof booking.rooms_booked === 'object' && booking.rooms_booked !== null ? (typeof booking.rooms_booked.rooms_booked === 'number' ? booking.rooms_booked.rooms_booked : 1) : (typeof booking.rooms_booked === 'number' ? booking.rooms_booked : 1)) === 1 ? 'room' : 'rooms'}</p>
+                            </div>
+                            <div className="p-4 bg-gray-50 dark:bg-gray-700 rounded-lg">
+                              <p className="text-xs font-semibold text-gray-600 dark:text-gray-400 uppercase tracking-wider mb-2">Check-in</p>
+                              <p className="text-lg font-bold text-gray-800 dark:text-white">{new Date(booking.check_in).toLocaleDateString()}</p>
+                              <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">{new Date(booking.check_in).toLocaleDateString('en-US', { weekday: 'short' })}</p>
+                            </div>
+                            <div className="p-4 bg-gray-50 dark:bg-gray-700 rounded-lg">
+                              <p className="text-xs font-semibold text-gray-600 dark:text-gray-400 uppercase tracking-wider mb-2">Check-out</p>
+                              <p className="text-lg font-bold text-gray-800 dark:text-white">{new Date(booking.check_out).toLocaleDateString()}</p>
+                              <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">{new Date(booking.check_out).toLocaleDateString('en-US', { weekday: 'short' })}</p>
+                            </div>
+                            <div className="p-4 bg-sky-50 dark:bg-sky-900/20 rounded-lg border border-sky-200 dark:border-sky-800">
+                              <p className="text-xs font-semibold text-sky-700 dark:text-sky-400 uppercase tracking-wider mb-2">Duration</p>
+                              <p className="text-lg font-bold text-sky-700 dark:text-sky-400">{nights} {nights === 1 ? 'night' : 'nights'}</p>
+                              {nights > 0 && (
+                                <p className="text-sm text-sky-600 dark:text-sky-300 mt-1">PKR {(booking.total_price / nights).toLocaleString('en-PK', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}/night</p>
+                              )}
+                            </div>
+                          </div>
+
+                          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mb-6">
+                            <div className="p-4 bg-gray-50 dark:bg-gray-700 rounded-lg">
+                              <p className="text-xs font-semibold text-gray-600 dark:text-gray-400 uppercase tracking-wider mb-2">Payment Method</p>
+                              <p className="text-lg font-bold text-gray-800 dark:text-white">{getPaymentMethodLabel(booking.payment_method)}</p>
+                              <p className={`text-sm mt-1 ${booking.payment_method === 'ONLINE' ? 'text-blue-600 dark:text-blue-400' : 'text-purple-600 dark:text-purple-400'}`}>{booking.payment_method === 'ONLINE' ? '🔒 Secure' : '💳 At desk'}</p>
+                            </div>
+                            <div className="p-4 bg-gray-50 dark:bg-gray-700 rounded-lg">
+                              <p className="text-xs font-semibold text-gray-600 dark:text-gray-400 uppercase tracking-wider mb-2">Booking Status</p>
+                              <p className="text-lg font-bold text-gray-800 dark:text-white">{booking.status}</p>
+                              <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">Booked on {new Date(booking.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</p>
+                            </div>
+                            {booking.guest_name && (
+                              <div className="p-4 bg-gray-50 dark:bg-gray-700 rounded-lg">
+                                <p className="text-xs font-semibold text-gray-600 dark:text-gray-400 uppercase tracking-wider mb-2">Guest Name</p>
+                                <p className="text-lg font-bold text-gray-800 dark:text-white truncate">{booking.guest_name}</p>
+                                {booking.guest_email && (<p className="text-sm text-gray-600 dark:text-gray-400 mt-1 truncate">{booking.guest_email}</p>)}
+                              </div>
                             )}
                           </div>
-                        </div>
 
-                        <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-4">
-                          <div className="p-4 bg-gray-50 dark:bg-gray-700 rounded-lg">
-                            <p className="text-sm text-gray-600 dark:text-gray-400 mb-1">Room Type</p>
-                            <p className="font-semibold text-gray-800 dark:text-white capitalize">
-                              {booking.room_type}
-                            </p>
-                          </div>
-                          
-                          <div className="p-4 bg-gray-50 dark:bg-gray-700 rounded-lg">
-                            <p className="text-sm text-gray-600 dark:text-gray-400 mb-1">Rooms</p>
-                            <p className="font-semibold text-gray-800 dark:text-white">
-                              {booking.rooms_booked}
-                            </p>
-                          </div>
-                          
-                          <div className="p-4 bg-gray-50 dark:bg-gray-700 rounded-lg">
-                            <p className="text-sm text-gray-600 dark:text-gray-400 mb-1">Check-in</p>
-                            <p className="font-semibold text-gray-800 dark:text-white">
-                              {new Date(booking.check_in_date).toLocaleDateString()}
-                            </p>
-                          </div>
-                          
-                          <div className="p-4 bg-gray-50 dark:bg-gray-700 rounded-lg">
-                            <p className="text-sm text-gray-600 dark:text-gray-400 mb-1">Check-out</p>
-                            <p className="font-semibold text-gray-800 dark:text-white">
-                              {new Date(booking.check_out_date).toLocaleDateString()}
-                            </p>
+                          <div className="flex items-center justify-between pt-4 border-t border-gray-200 dark:border-gray-700">
+                            <div>
+                              <p className="text-sm text-gray-600 dark:text-gray-400 mb-1">Total Amount</p>
+                              <p className="text-2xl font-bold text-sky-600 dark:text-sky-400">PKR {parseFloat(booking.total_price).toLocaleString('en-PK', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
+                            </div>
+                            <div className="flex gap-3">
+                              {booking.payment_method === 'ONLINE' && booking.status === 'PENDING' && (
+                                <button onClick={() => navigate(`/payment/${booking.id}`, { state: { booking } })} className="px-6 py-2 bg-sky-600 hover:bg-sky-700 text-white rounded-lg font-medium transition-colors">Complete Payment</button>
+                              )}
+                              {booking.status === 'PENDING' && (
+                                <button onClick={() => handleCancelBooking(booking.id)} disabled={cancelling === booking.id} className="px-6 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg font-medium transition-colors disabled:opacity-50">{cancelling === booking.id ? 'Cancelling...' : 'Cancel'}</button>
+                              )}
+                            </div>
                           </div>
                         </div>
-
-                        <div className="flex items-center justify-between pt-4 border-t border-gray-200 dark:border-gray-700">
-                          <div>
-                            <p className="text-sm text-gray-600 dark:text-gray-400 mb-1">Total Amount</p>
-                            <p className="text-2xl font-bold text-sky-600 dark:text-sky-400">
-                              ${parseFloat(booking.total_price).toFixed(2)}
-                            </p>
-                          </div>
-                          
-                          {!booking.payment_status && (
-                            <button
-                              onClick={() => navigate('/payment', { state: { booking } })}
-                              className="px-6 py-2 bg-sky-600 hover:bg-sky-700 text-white rounded-lg font-medium transition-colors"
-                            >
-                              Complete Payment
-                            </button>
-                          )}
-                        </div>
-                      </div>
-                    </motion.div>
-                  ))}
+                      </motion.div>
+                    );
+                  })}
                 </div>
               )}
             </div>

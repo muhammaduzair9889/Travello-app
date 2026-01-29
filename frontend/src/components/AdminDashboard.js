@@ -123,7 +123,9 @@ const AdminDashboard = () => {
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-xs sm:text-sm text-gray-600 dark:text-gray-400 mb-1">Total Revenue</p>
-                  <p className="text-2xl sm:text-3xl font-bold text-gray-800 dark:text-white">PKR {stats.totalRevenue.toLocaleString('en-PK', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
+                  <p className="text-2xl sm:text-3xl font-bold text-gray-800 dark:text-white">
+                    PKR {stats.totalRevenue ? stats.totalRevenue.toLocaleString('en-PK', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '0.00'}
+                  </p>
                 </div>
                 <div className="w-10 h-10 sm:w-12 sm:h-12 bg-green-100 dark:bg-green-900/30 rounded-lg flex items-center justify-center transition-colors">
                   <FaUsers className="text-green-600 dark:text-green-400 text-xl sm:text-2xl" />
@@ -154,12 +156,31 @@ const AdminDashboard = () => {
               transition={{ delay: 0.5 }}
               whileHover={{ scale: 1.02 }}
               whileTap={{ scale: 0.98 }}
-              onClick={() => window.open('http://127.0.0.1:8000/admin/', '_blank')}
+              onClick={() => navigate('/admin/bookings')}
               className="p-6 sm:p-8 bg-gradient-to-r from-purple-500 to-pink-600 hover:from-purple-600 hover:to-pink-700 text-white rounded-xl shadow-lg hover:shadow-xl transition-all duration-200"
             >
               <FaBook className="text-3xl sm:text-4xl mb-3 sm:mb-4" />
-              <h3 className="text-xl sm:text-2xl font-bold mb-2">View All Bookings</h3>
-              <p className="text-xs sm:text-sm opacity-90">Login with superadmin credentials to view bookings</p>
+              <h3 className="text-xl sm:text-2xl font-bold mb-2">Manage Bookings</h3>
+              <p className="text-xs sm:text-sm opacity-90">View, filter, and update all bookings</p>
+            </motion.button>
+
+            <motion.button
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              transition={{ delay: 0.6 }}
+              whileHover={{ scale: 1.02 }}
+              whileTap={{ scale: 0.98 }}
+              onClick={() => {
+                const apiUrl = process.env.REACT_APP_API_URL || 'http://localhost:8000/api';
+                const baseUrl = apiUrl.replace(/\/api$/, '');
+                const adminUrl = `${baseUrl}/admin/`;
+                window.open(adminUrl, '_blank');
+              }}
+              className="p-6 sm:p-8 bg-gradient-to-r from-gray-600 to-gray-800 hover:from-gray-700 hover:to-gray-900 text-white rounded-xl shadow-lg hover:shadow-xl transition-all duration-200"
+            >
+              <FaUsers className="text-3xl sm:text-4xl mb-3 sm:mb-4" />
+              <h3 className="text-xl sm:text-2xl font-bold mb-2">Admin Panel</h3>
+              <p className="text-xs sm:text-sm opacity-90">Open Django Admin (users, payments, data)</p>
             </motion.button>
           </div>
         </div>

@@ -19,10 +19,15 @@ const HotelsList = lazy(() => import('./components/HotelsList'));
 const HotelSearchLahore = lazy(() => import('./components/HotelSearchLahore'));
 const HotelResults = lazy(() => import('./components/HotelResults'));
 const HotelBooking = lazy(() => import('./components/HotelBooking'));
+const HotelDetailPage = lazy(() => import('./components/HotelDetailPage'));
 const Payment = lazy(() => import('./components/Payment'));
+const PaymentPage = lazy(() => import('./components/PaymentPage'));
+const PaymentSuccess = lazy(() => import('./components/PaymentSuccess'));
+const PaymentCancel = lazy(() => import('./components/PaymentCancel'));
 const MyBookings = lazy(() => import('./components/MyBookings'));
 const AdminHotels = lazy(() => import('./components/AdminHotels'));
 const AdminDashboard = lazy(() => import('./components/AdminDashboard'));
+const AdminBookings = lazy(() => import('./components/AdminBookings'));
 
 // Loading component
 const LoadingSpinner = () => (
@@ -75,12 +80,17 @@ function App() {
                   <Route path="/dashboard" element={<Dashboard />} />
                   <Route path="/admin-login" element={<AdminLogin />} />
                   <Route path="/hotels" element={<HotelsList />} />
+                  <Route path="/hotels/:id" element={<HotelDetailPage />} />
                   <Route path="/hotels/search-lahore" element={<HotelSearchLahore />} />
                   <Route path="/hotels/results" element={<HotelResults />} />
                   <Route path="/hotel-booking" element={<HotelBooking />} />
                   <Route path="/payment" element={<Payment />} />
+                  <Route path="/payment/:bookingId" element={<PaymentPage />} />
+                  <Route path="/payment-success" element={<PaymentSuccess />} />
+                  <Route path="/payment-cancel" element={<PaymentCancel />} />
                   <Route path="/my-bookings" element={<MyBookings />} />
                   <Route path="/admin/hotels" element={<AdminHotels />} />
+                  <Route path="/admin/bookings" element={<AdminBookings />} />
                   <Route path="/admin-dashboard" element={<AdminDashboard />} />
                 </Routes>
               </Suspense>

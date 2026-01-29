@@ -99,7 +99,24 @@ const Login = () => {
         navigate('/dashboard');
       }
     } catch (err) {
-      setError(err.response?.data?.error || 'Login failed. Please try again.');
+      console.error('Login error:', err);
+      
+      // Improved error handling
+      let errorMessage = 'Login failed. Please try again.';
+      
+      if (err.status === 'network_error') {
+        errorMessage = `Network error: Cannot connect to server at ${err.details?.apiUrl}. Make sure the backend server is running.`;
+      } else if (err.status === 404) {
+        errorMessage = 'Invalid email or password.';
+      } else if (err.status === 400) {
+        errorMessage = err.message || 'Invalid credentials. Please check your email and password.';
+      } else if (err.status === 500) {
+        errorMessage = 'Server error. Please try again later.';
+      } else if (err.message) {
+        errorMessage = err.message;
+      }
+      
+      setError(errorMessage);
     } finally {
       setLoading(false);
     }
