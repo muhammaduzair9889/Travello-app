@@ -331,14 +331,6 @@ curl -X POST http://127.0.0.1:8000/api/auth/api/verify-login-otp/ \
 
 ---
 
-## 📧 Email Configuration Details
-
-**Provider:** Gmail SMTP
-**Account:** uzairnawaz956@gmail.com
-**Authentication:** App Password (hbxjunkfpprnqqty)
-**Port:** 587 (TLS)
-**From Address:** uzairnawaz956@gmail.com
-
 **Note:** Ensure "Less secure app access" is enabled or use App Password (currently configured)
 
 ---
