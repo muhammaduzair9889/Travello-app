@@ -99,18 +99,6 @@ Complete email-based OTP authentication system has been successfully implemented
 
 ---
 
-### 5. Email Configuration
-**File:** `.env` (root directory)
-
-```env
-EMAIL_BACKEND=django.core.mail.backends.smtp.EmailBackend
-EMAIL_HOST=smtp.gmail.com
-EMAIL_PORT=587
-EMAIL_USE_TLS=True
-EMAIL_HOST_USER=uzairnawaz956@gmail.com
-EMAIL_HOST_PASSWORD=hbxjunkfpprnqqty
-DEFAULT_FROM_EMAIL=uzairnawaz956@gmail.com
-```
 
 **Status:** ✅ Configured with actual Gmail credentials
 
@@ -331,7 +319,6 @@ curl -X POST http://127.0.0.1:8000/api/auth/api/verify-login-otp/ \
 
 ---
 
-**Note:** Ensure "Less secure app access" is enabled or use App Password (currently configured)
 
 ---
 
