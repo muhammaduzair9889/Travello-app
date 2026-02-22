@@ -274,6 +274,7 @@ serve.py
 OPTIMIZATION*.md
 DEPLOYMENT*.md
 PERFORMANCE*.md
+*.md
 
 # Keep these important docs
 !README.md
