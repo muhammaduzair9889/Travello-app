@@ -21,11 +21,11 @@ Write-Host "Press Ctrl+C to stop the server" -ForegroundColor Yellow
 Write-Host "===============================================" -ForegroundColor Cyan
 Write-Host ""
 
-Set-Location "f:\Travello Project\Travello Project\backend"
+Set-Location "D:\checking\Travello\backend"
 
 # Check system
 Write-Host "Running system checks..." -ForegroundColor Yellow
-python manage.py check
+c:/python312/python.exe manage.py check
 if ($LASTEXITCODE -ne 0) {
     Write-Host "System check failed!" -ForegroundColor Red
     exit 1
@@ -33,4 +33,4 @@ if ($LASTEXITCODE -ne 0) {
 
 Write-Host ""
 Write-Host "Starting Django development server..." -ForegroundColor Green
-python manage.py runserver 0.0.0.0:8000
+c:/python312/python.exe manage.py runserver 0.0.0.0:8000

@@ -126,42 +126,12 @@ class CreatePaymentSessionView(APIView):
                         status=status.HTTP_400_BAD_REQUEST
                     )
                 
-                # Create or update Payment Intent
                 currency = STRIPE_CURRENCY_PRIMARY
                 amount_cents = int(float(booking.total_price) * 100)
                 
-                try:
-                    # Try with primary currency (PKR)
-                    payment_intent = stripe.PaymentIntent.create(
-                        amount=amount_cents,
-                        currency=currency,
-                        metadata={
-                            'booking_id': str(booking.id),
-                            'user_id': str(booking.user.id),
-                            'hotel_id': str(booking.hotel.id),
-                        }
-                    )
-                except stripe.error.InvalidRequestError as e:
-                    # Fallback to USD if primary currency not supported
-                    logger.warning(f"Stripe currency {currency} not supported, falling back to {STRIPE_CURRENCY_FALLBACK}: {str(e)}")
-                    currency = STRIPE_CURRENCY_FALLBACK
-                    payment.currency = currency
-                    
-                    payment_intent = stripe.PaymentIntent.create(
-                        amount=amount_cents,
-                        currency=currency,
-                        metadata={
-                            'booking_id': str(booking.id),
-                            'user_id': str(booking.user.id),
-                            'hotel_id': str(booking.hotel.id),
-                        }
-                    )
-                
-                # Create Checkout Session
-                session = stripe.checkout.Session.create(
-                    payment_intent_data={
-                        'setup_future_usage': 'off_session',
-                    },
+                # Build Checkout Session parameters — Stripe creates
+                # its own PaymentIntent automatically in mode='payment'.
+                session_kwargs = dict(
                     mode='payment',
                     payment_method_types=['card'],
                     line_items=[{
@@ -173,15 +143,18 @@ class CreatePaymentSessionView(APIView):
                                     f'{booking.room_type.get_type_display()} room - '
                                     f'{booking.number_of_nights} nights'
                                 ),
-                                'metadata': {
-                                    'booking_id': str(booking.id),
-                                    'hotel_id': str(booking.hotel.id),
-                                }
                             },
                             'unit_amount': amount_cents,
                         },
                         'quantity': 1,
                     }],
+                    payment_intent_data={
+                        'metadata': {
+                            'booking_id': str(booking.id),
+                            'user_id': str(booking.user.id),
+                            'hotel_id': str(booking.hotel.id),
+                        },
+                    },
                     metadata={
                         'booking_id': str(booking.id),
                         'payment_id': str(payment.id),
@@ -190,15 +163,29 @@ class CreatePaymentSessionView(APIView):
                     cancel_url=f'{FRONTEND_CANCEL_URL}?booking_id={booking.id}',
                 )
                 
+                try:
+                    session = stripe.checkout.Session.create(**session_kwargs)
+                except stripe.error.InvalidRequestError as e:
+                    # Fallback to USD if primary currency not supported
+                    logger.warning(
+                        f"Stripe currency {currency} not supported, "
+                        f"falling back to {STRIPE_CURRENCY_FALLBACK}: {str(e)}"
+                    )
+                    currency = STRIPE_CURRENCY_FALLBACK
+                    payment.currency = currency
+                    session_kwargs['line_items'][0]['price_data']['currency'] = currency
+                    session = stripe.checkout.Session.create(**session_kwargs)
+                
                 # Update payment record with session info
-                payment.stripe_payment_intent = payment_intent.id
+                payment.stripe_payment_intent = session.payment_intent or ''
                 payment.stripe_session_id = session.id
                 payment.status = 'PROCESSING'
                 payment.save()
                 
                 logger.info(
                     f"Payment session created - Booking: {booking.id}, "
-                    f"Session: {session.id}, Amount: {booking.total_price} {currency}"
+                    f"Session: {session.id}, URL: {session.url}, "
+                    f"Amount: {booking.total_price} {currency}"
                 )
                 
                 return Response({

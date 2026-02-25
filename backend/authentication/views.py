@@ -195,7 +195,8 @@ def google_login(request):
             idinfo = id_token.verify_oauth2_token(
                 credential,
                 google_requests.Request(),
-                settings.GOOGLE_OAUTH_CLIENT_ID
+                settings.GOOGLE_OAUTH_CLIENT_ID,
+                clock_skew_in_seconds=120,  # tolerate up to 2 min clock drift
             )
         except Exception as e:
             logger.warning(f"Invalid Google token: {str(e)}")
@@ -242,16 +243,27 @@ def google_login(request):
         if created or updated:
             user.save()
 
-        refresh = RefreshToken.for_user(user)
-        access_token = refresh.access_token
+        # --- Send login OTP instead of issuing tokens directly ---
+        otp = create_otp_for_user(user, purpose='login')
+        if not otp:
+            return Response(
+                {'error': 'Failed to create OTP. Please try again.'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
+        email_sent = send_otp_email(email, otp.otp_code, purpose='login')
+        if not email_sent:
+            return Response(
+                {'error': 'Failed to send OTP email. Please try again.'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
+        logger.info(f"Google login OTP sent to: {email}")
 
         return Response({
-            'message': 'Google login successful',
-            'user': UserSerializer(user).data,
-            'tokens': {
-                'access': str(access_token),
-                'refresh': str(refresh)
-            }
+            'message': 'Google identity verified. OTP sent to your email.',
+            'email': email,
+            'next_step': 'verify_login_otp'
         }, status=status.HTTP_200_OK)
 
     except Exception as e:
@@ -472,6 +484,57 @@ def login_with_otp(request):
         logger.error(f"Error during login with OTP: {str(e)}")
         return Response(
             {'error': 'Error during login. Please try again.'},
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )
+
+
+@api_view(['POST'])
+@permission_classes([AllowAny])
+def resend_login_otp(request):
+    """Resend login OTP by email only (used after Google login or when password unavailable)"""
+    try:
+        email = request.data.get('email', '').lower()
+
+        if not email:
+            return Response(
+                {'error': 'Email is required'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        try:
+            user = User.objects.get(email=email, is_active=True)
+        except User.DoesNotExist:
+            # Don't reveal if email exists
+            return Response({
+                'message': 'If an account exists, a new OTP has been sent.',
+                'email': email,
+            }, status=status.HTTP_200_OK)
+
+        otp = create_otp_for_user(user, purpose='login')
+        if not otp:
+            return Response(
+                {'error': 'Failed to create OTP. Please try again.'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
+        email_sent = send_otp_email(email, otp.otp_code, purpose='login')
+        if not email_sent:
+            return Response(
+                {'error': 'Failed to send OTP email. Please try again.'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
+        logger.info(f"Login OTP resent to: {email}")
+
+        return Response({
+            'message': 'OTP resent to your email.',
+            'email': email,
+        }, status=status.HTTP_200_OK)
+
+    except Exception as e:
+        logger.error(f"Error resending login OTP: {str(e)}")
+        return Response(
+            {'error': 'Error resending OTP. Please try again.'},
             status=status.HTTP_500_INTERNAL_SERVER_ERROR
         )
 

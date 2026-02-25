@@ -51,14 +51,11 @@ const VerifyLoginOtp = () => {
     }
   };
 
+  const isGoogleLogin = location.state?.isGoogleLogin || false;
+
   const handleResend = async () => {
     if (!email) {
       setError('Email is missing. Please go back to login.');
-      return;
-    }
-
-    if (!passwordFromState) {
-      setError('Please go back to login to request a new OTP.');
       return;
     }
 
@@ -67,10 +64,12 @@ const VerifyLoginOtp = () => {
     setInfo('');
 
     try {
-      await authAPI.loginOtp({
-        email,
-        password: passwordFromState,
-      });
+      if (isGoogleLogin || !passwordFromState) {
+        // Google login or no password — use resend-only endpoint
+        await authAPI.resendLoginOtp({ email });
+      } else {
+        await authAPI.loginOtp({ email, password: passwordFromState });
+      }
       setInfo('OTP resent. Please check your email.');
     } catch (err) {
       setError(err.message || 'Failed to resend OTP. Please try again.');

@@ -139,11 +139,10 @@ const Login = () => {
       const response = await authAPI.googleLogin({
         credential: credentialResponse.credential,
       });
-      localStorage.setItem('access_token', response.data.tokens.access);
-      localStorage.setItem('refresh_token', response.data.tokens.refresh);
-      localStorage.setItem('user', JSON.stringify(response.data.user));
+      // Backend now sends OTP instead of tokens — redirect to OTP page
+      const nextEmail = response?.data?.email || '';
       localStorage.setItem('isAdmin', 'false');
-      navigate('/dashboard');
+      navigate('/verify-login-otp', { state: { email: nextEmail, isGoogleLogin: true } });
     } catch (err) {
       setError(err.message || 'Google login failed. Please try again.');
     } finally {

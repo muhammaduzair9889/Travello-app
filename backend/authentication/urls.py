@@ -21,6 +21,7 @@ urlpatterns = [
     
     # Login with OTP
     path('api/login-otp/', views.login_with_otp, name='login_with_otp'),
+    path('api/resend-login-otp/', views.resend_login_otp, name='resend_login_otp'),
     path('api/verify-login-otp/', views.verify_login_otp, name='verify_login_otp'),
     
     # Password Reset with OTP

@@ -16,7 +16,7 @@ Write-Host "To stop: Press Ctrl+C" -ForegroundColor Yellow
 Write-Host "===============================================" -ForegroundColor Cyan
 Write-Host ""
 
-Set-Location "f:\Travello Project\Travello Project\frontend"
+Set-Location "D:\checking\Travello\frontend"
 
 # Check if node_modules exists
 if (-not (Test-Path "node_modules")) {

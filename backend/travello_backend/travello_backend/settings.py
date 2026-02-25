@@ -14,7 +14,13 @@ from pathlib import Path
 import os
 import sys
 from decouple import config
-import pymysql
+
+# PyMySQL — only needed when a MySQL DATABASE_URL is configured
+try:
+    import pymysql
+    pymysql.install_as_MySQLdb()
+except ImportError:
+    pass  # SQLite / PostgreSQL deployments don't need it
 
 # Import dj_database_url only if available (for Render deployment)
 try:
@@ -22,9 +28,6 @@ try:
     HAS_DJ_DATABASE_URL = True
 except ImportError:
     HAS_DJ_DATABASE_URL = False
-
-# Install PyMySQL as MySQLdb
-pymysql.install_as_MySQLdb()
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -213,22 +216,12 @@ SIMPLE_JWT = {
     'UPDATE_LAST_LOGIN': True,
     'ALGORITHM': 'HS256',
     'SIGNING_KEY': SECRET_KEY,
-    'VERIFYING_KEY': None,
-    'AUDIENCE': None,
-    'ISSUER': None,
-    'JWK_URL': None,
-    'LEEWAY': 0,
     'AUTH_HEADER_TYPES': ('Bearer',),
-    'AUTH_HEADER_NAME': 'HTTP_AUTHORIZATION',
     'USER_ID_FIELD': 'id',
     'USER_ID_CLAIM': 'user_id',
-    'USER_AUTHENTICATION_RULE': 'rest_framework_simplejwt.authentication.default_user_authentication_rule',
     'AUTH_TOKEN_CLASSES': ('rest_framework_simplejwt.tokens.AccessToken',),
     'TOKEN_TYPE_CLAIM': 'token_type',
     'JTI_CLAIM': 'jti',
-    'SLIDING_TOKEN_REFRESH_EXP_CLAIM': 'refresh_exp',
-    'SLIDING_TOKEN_LIFETIME': timedelta(minutes=5),
-    'SLIDING_TOKEN_REFRESH_LIFETIME': timedelta(days=1),
 }
 
 # CORS Settings - Dynamic based on environment

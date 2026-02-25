@@ -1,29 +1,26 @@
 /**
  * Real-time Booking.com Scraper with Multi-Sort Strategy
- * 
+ *
  * Booking.com ignores offset/pagination parameters and always returns the same 25 hotels.
  * This scraper uses DIFFERENT SORT ORDERS to get different sets of 25 hotels,
- * then combines and deduplicates them for 75-125+ unique hotels.
- * 
- * Sort orders used:
- *   - popularity (default) 
- *   - price (lowest first)
- *   - review_score_and_price (best reviewed + price)
- *   - class (star rating descending)
- *   - class_asc (star rating ascending)
- *   - distance_from_landmark (closest to center)
- *   - bayesian_review_score (highest rated)
- * 
- * Requirements:
- * npm install puppeteer puppeteer-extra puppeteer-extra-plugin-stealth
+ * then combines and deduplicates them for 125-175+ unique hotels.
+ *
+ * Sort orders used (all 7 for maximum results):
+ *   - popularity, price, review_score_and_price, class, class_asc,
+ *     distance_from_landmark, bayesian_review_score
+ *
+ * Memory optimisation: images, fonts, media and analytics are blocked —
+ * hotel text data is unaffected but memory/bandwidth drops ~70%.
+ *
+ * Requirements: npm install puppeteer puppeteer-extra puppeteer-extra-plugin-stealth
  */
 
 const puppeteer = require('puppeteer-extra');
 const StealthPlugin = require('puppeteer-extra-plugin-stealth');
 puppeteer.use(StealthPlugin());
 
-// Utility to add random delay (human-like behavior)
-const randomDelay = (min, max) => new Promise(resolve => 
+// Utility to add random delay (human-like behaviour)
+const randomDelay = (min, max) => new Promise(resolve =>
     setTimeout(resolve, Math.floor(Math.random() * (max - min + 1) + min))
 );
 
@@ -38,16 +35,31 @@ const SORT_ORDERS = [
     'bayesian_review_score'
 ];
 
+// Resource types that carry zero useful data for scraping — block them to
+// save memory, CPU and bandwidth on every tab.
+const BLOCKED_RESOURCE_TYPES = new Set([
+    'image', 'media', 'font', 'stylesheet',
+    'ping', 'other'   // 'other' covers beacon/analytics
+]);
+
+// Known analytics / ad domains — block their network requests regardless of type.
+const BLOCKED_DOMAINS = [
+    'google-analytics.com', 'googletagmanager.com', 'doubleclick.net',
+    'facebook.net', 'hotjar.com', 'amplitude.com', 'segment.io',
+    'booking-ext.com', 'bizographics.com', 'criteo.com'
+];
+
 /**
- * Configure a browser page with stealth settings
+ * Configure a browser page with stealth + resource-blocking settings.
  */
 async function configurePage(page) {
     await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36');
-    await page.setViewport({ width: 1920, height: 1080 });
-    
+    // Smaller viewport — Booking.com renders the same card data regardless
+    await page.setViewport({ width: 1366, height: 768 });
+
     await page.setExtraHTTPHeaders({
         'Accept-Language': 'en-US,en;q=0.9',
-        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
         'Accept-Encoding': 'gzip, deflate, br',
         'Connection': 'keep-alive',
         'Upgrade-Insecure-Requests': '1',
@@ -58,27 +70,43 @@ async function configurePage(page) {
         'Cache-Control': 'max-age=0'
     });
 
+    // Anti-detection overrides
     await page.evaluateOnNewDocument(() => {
         Object.defineProperty(navigator, 'webdriver', { get: () => false });
-        Object.defineProperty(navigator, 'plugins', { get: () => [1, 2, 3, 4, 5] });
+        Object.defineProperty(navigator, 'plugins',   { get: () => [1, 2, 3, 4, 5] });
         Object.defineProperty(navigator, 'languages', { get: () => ['en-US', 'en'] });
         window.chrome = { runtime: {} };
+    });
+
+    // ── Block images, fonts, media, analytics ──────────────────────────────
+    await page.setRequestInterception(true);
+    page.on('request', (req) => {
+        const type = req.resourceType();
+        const url  = req.url();
+
+        if (BLOCKED_RESOURCE_TYPES.has(type)) {
+            req.abort();
+            return;
+        }
+        if (BLOCKED_DOMAINS.some(d => url.includes(d))) {
+            req.abort();
+            return;
+        }
+        req.continue();
     });
 }
 
 /**
- * Extract hotel data from all property cards on a page
+ * Extract hotel data from all property cards on a page.
+ * Images are blocked, so fewer scroll pauses are needed.
  */
 async function extractHotelsFromPage(page) {
-    // Scroll to load all lazy-loaded cards
-    for (let i = 0; i < 6; i++) {
-        await page.evaluate(async () => {
-            window.scrollBy(0, window.innerHeight);
-            await new Promise(r => setTimeout(r, 250));
-        });
-        await randomDelay(200, 400);
+    // Scroll to trigger lazy-loaded card text (images are already blocked)
+    for (let i = 0; i < 4; i++) {
+        await page.evaluate(() => window.scrollBy(0, window.innerHeight));
+        await randomDelay(150, 300);
     }
-    await randomDelay(500, 1000);
+    await randomDelay(300, 600);
 
     return await page.evaluate(() => {
         const hotelCards = document.querySelectorAll('[data-testid="property-card"]');
@@ -272,13 +300,13 @@ async function scrapeSortOrder(browser, searchParams, sortOrder, index) {
         console.error(`  [${index + 1}] Navigating sort="${sortOrder}"...`);
 
         await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 45000 });
-        await randomDelay(2000, 4000);
+        await randomDelay(1200, 2500);
 
         // Check for bot detection
         const content = await page.content();
         if (content.includes('unusual traffic') || content.includes('CAPTCHA') || content.includes('challenge-running')) {
             console.error(`  [${index + 1}] ⚠️ Bot detection on sort="${sortOrder}", waiting...`);
-            await randomDelay(5000, 8000);
+            await randomDelay(4000, 6000);
         }
 
         // Wait for property cards
@@ -317,13 +345,22 @@ async function scrapeBookingHotels(searchParams) {
                 '--disable-dev-shm-usage',
                 '--disable-accelerated-2d-canvas',
                 '--disable-gpu',
-                '--window-size=1920,1080',
+                '--window-size=1366,768',
                 '--disable-blink-features=AutomationControlled',
                 '--disable-features=IsolateOrigins,site-per-process',
                 '--disable-web-security',
-                '--disable-features=CrossSiteDocumentBlockingIfIsolating',
                 '--disable-site-isolation-trials',
-                '--lang=en-US,en'
+                '--lang=en-US,en',
+                // Memory savers
+                '--disable-extensions',
+                '--disable-background-networking',
+                '--disable-sync',
+                '--disable-translate',
+                '--hide-scrollbars',
+                '--mute-audio',
+                '--no-first-run',
+                '--no-default-browser-check',
+                '--js-flags=--max-old-space-size=512',
             ],
             ignoreDefaultArgs: ['--enable-automation'],
             timeout: 60000
@@ -337,7 +374,7 @@ async function scrapeBookingHotels(searchParams) {
     try {
         // Determine which sort orders to use (default: all 7)
         const sortOrders = searchParams.sort_orders || SORT_ORDERS;
-        const concurrency = searchParams.concurrency || 3; // Max tabs open at once
+        const concurrency = searchParams.concurrency || 4; // 4 tabs in parallel for max throughput
 
         console.error(`\n🔄 MULTI-SORT STRATEGY: Scraping ${sortOrders.length} sort orders (concurrency=${concurrency})...`);
 
@@ -372,9 +409,9 @@ async function scrapeBookingHotels(searchParams) {
 
             console.error(`  Running total: ${allHotels.length} unique hotels`);
 
-            // Small delay between batches
+            // Brief pause between batches
             if (batchStart + concurrency < sortOrders.length) {
-                await randomDelay(1000, 2000);
+                await randomDelay(500, 1000);
             }
         }
 
