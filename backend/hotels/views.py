@@ -556,6 +556,117 @@ class BookingPreviewView(APIView):
             )
 
 
+class ScrapedHotelBookingView(APIView):
+    """
+    POST /api/bookings/scraped/
+    
+    Create a booking for a scraped hotel (not yet in the database).
+    This endpoint:
+    1. Creates or retrieves the Hotel record
+    2. Creates or retrieves the RoomType record
+    3. Creates the Booking with ONLINE payment method
+    4. Returns booking data so the frontend can redirect to Stripe payment
+    """
+    permission_classes = [IsAuthenticated]
+    
+    @transaction.atomic
+    def post(self, request):
+        data = request.data
+        
+        # Validate required fields
+        required = ['hotel_name', 'city', 'room_type', 'price_per_night',
+                     'check_in', 'check_out', 'rooms_booked']
+        missing = [f for f in required if not data.get(f)]
+        if missing:
+            return Response(
+                {'success': False, 'error': f'Missing required fields: {", ".join(missing)}'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        
+        try:
+            check_in = parse_date(data['check_in'])
+            check_out = parse_date(data['check_out'])
+            if not check_in or not check_out or check_out <= check_in:
+                return Response(
+                    {'success': False, 'error': 'Invalid dates. Check-out must be after check-in.'},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            
+            price_per_night = float(data['price_per_night'])
+            rooms_booked = int(data.get('rooms_booked', 1))
+            
+            # 1. Get or create the Hotel
+            hotel, _ = Hotel.objects.get_or_create(
+                name=data['hotel_name'],
+                city=data['city'],
+                defaults={
+                    'address': data.get('location', data.get('address', 'Unknown')),
+                    'description': data.get('description', f'Scraped hotel: {data["hotel_name"]}'),
+                    'image': data.get('image', ''),
+                    'rating': float(data.get('rating', 0)),
+                },
+            )
+            
+            # 2. Map the room type string to a valid choice
+            room_type_str = data['room_type'].lower()
+            valid_types = dict(RoomType.ROOM_TYPE_CHOICES)
+            if room_type_str not in valid_types:
+                room_type_str = 'double'  # Sensible default for scraped hotels
+            
+            # 3. Get or create the RoomType
+            room_type, _ = RoomType.objects.get_or_create(
+                hotel=hotel,
+                type=room_type_str,
+                defaults={
+                    'price_per_night': price_per_night,
+                    'total_rooms': 50,  # Large default for scraped hotels
+                    'max_occupancy': 2,
+                    'description': data.get('room_name', f'{valid_types.get(room_type_str, "Room")} Room'),
+                },
+            )
+            
+            # Update price if it changed
+            if float(room_type.price_per_night) != price_per_night:
+                room_type.price_per_night = price_per_night
+                room_type.save()
+            
+            # 4. Calculate total price and create booking
+            nights = (check_out - check_in).days
+            total_price = price_per_night * nights * rooms_booked
+            
+            booking = Booking.objects.create(
+                user=request.user,
+                hotel=hotel,
+                room_type=room_type,
+                rooms_booked=rooms_booked,
+                check_in=check_in,
+                check_out=check_out,
+                total_price=total_price,
+                payment_method='ONLINE',
+                status='PENDING',
+                guest_name=request.user.get_full_name() or request.user.username,
+                guest_email=request.user.email,
+            )
+            
+            response_serializer = BookingSerializer(booking)
+            logger.info(f"Scraped hotel booking {booking.id} created for hotel '{hotel.name}'")
+            
+            return Response({
+                'success': True,
+                'message': 'Booking created successfully',
+                'booking': response_serializer.data,
+                'booking_id': booking.id,
+                'payment_required': True,
+            }, status=status.HTTP_201_CREATED)
+        
+        except Exception as e:
+            logger.error(f"Error creating scraped hotel booking: {str(e)}", exc_info=True)
+            return Response(
+                {'success': False, 'error': f'Failed to create booking: {str(e)}'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
+
+
 class RoomAvailabilityView(APIView):
     """
     Check room availability for specific dates.

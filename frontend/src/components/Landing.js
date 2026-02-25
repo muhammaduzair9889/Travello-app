@@ -9,26 +9,27 @@ const BackgroundSlider = memo(() => {
   
   const landmarks = useMemo(() => [
     {
-      url: 'https://images.unsplash.com/photo-1469854523086-cc02fe5d8800?w=1920&q=80',
-      name: 'Road Trip Adventure'
+      url: 'https://images.unsplash.com/photo-1629234932140-49db511736c5?w=1920&auto=format&fit=crop&q=80',
+      name: 'Lahore Fort'
     },
     {
-      url: 'https://images.unsplash.com/photo-1476514525535-07fb3b4ae5f1?w=1920&q=80',
-      name: 'Lake Paradise'
+      url: 'https://images.unsplash.com/photo-1622279488067-3a4ca25ce8ff?w=1920&auto=format&fit=crop&q=80',
+      name: 'Minar-e-Pakistan'
     },
     {
-      url: 'https://images.unsplash.com/photo-1507525428034-b723cf961d3e?w=1920&q=80',
-      name: 'Tropical Beach'
+      url: 'https://images.unsplash.com/photo-1621351089338-8ac55e890845?w=1920&auto=format&fit=crop&q=80',
+      name: 'Badshahi Mosque'
     },
     {
-      url: 'https://images.unsplash.com/photo-1506905925346-21bda4d32df4?w=1920&q=80',
+      url: 'https://images.unsplash.com/photo-1506905925346-21bda4d32df4?w=1920&auto=format&fit=crop&q=80',
       name: 'Mountain Peaks'
     },
     {
-      url: 'https://images.unsplash.com/photo-1530789253388-582c481c54b0?w=1920&q=80',
-      name: 'Ancient Temples'
+      url: 'https://images.unsplash.com/photo-1567604130498-6a0dc4fcea1c?w=1920&auto=format&fit=crop&q=80',
+      name: 'Faisal Mosque'
     }
   ], []);
+  
 
   useEffect(() => {
     const interval = setInterval(() => {

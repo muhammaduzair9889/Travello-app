@@ -2,7 +2,7 @@ from django.urls import path, include
 from rest_framework.routers import DefaultRouter
 from .views import (
     HotelViewSet, BookingViewSet, RealTimeHotelSearchView, 
-    RoomAvailabilityView, BookingPreviewView
+    RoomAvailabilityView, BookingPreviewView, ScrapedHotelBookingView
 )
 
 # Try importing ML views, but make them optional
@@ -37,6 +37,7 @@ urlpatterns += [
     path('hotels/search-live/', RealTimeHotelSearchView.as_view(), name='hotel-search-live'),
     path('hotels/check-availability/', RoomAvailabilityView.as_view(), name='check-availability'),
     path('bookings/preview/', BookingPreviewView.as_view(), name='booking-preview'),
+    path('bookings/scraped/', ScrapedHotelBookingView.as_view(), name='scraped-hotel-booking'),
     
     # Router endpoints
     path('', include(router.urls)),

@@ -255,6 +255,10 @@ export const bookingAPI = {
     return api.post(`/bookings/${bookingId}/confirm_payment/`);
   },
   getBooking: (id) => api.get(`/bookings/${id}/`),
+  createScrapedBooking: (bookingData) => {
+    cache.delete('bookings_my');
+    return api.post('/bookings/scraped/', bookingData);
+  },
 };
 
 export const paymentAPI = {
