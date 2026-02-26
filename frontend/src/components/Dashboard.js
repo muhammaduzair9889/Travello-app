@@ -35,6 +35,7 @@ import {
 import { MapContainer, TileLayer, Marker, Popup } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
 import L from 'leaflet';
+import ItineraryPlanner from './ItineraryPlanner';
 
 // Fix for default marker icon in react-leaflet
 delete L.Icon.Default.prototype._getIconUrl;
@@ -54,6 +55,11 @@ const features = [
     name: 'Sightseeing',
     icon: FaGlobeAsia,
     description: 'Discover tours and activities.',
+  },
+  {
+    name: 'AI Itinerary',
+    icon: Calendar,
+    description: 'Generate and customize a multi-day itinerary.',
   },
   {
     name: 'My Bookings',
@@ -1837,6 +1843,13 @@ const Dashboard = () => {
               </div>
               </div>
             </>
+          )}
+
+          {/* AI Itinerary Section */}
+          {activeFeature === 'AI Itinerary' && (
+            <div>
+              <ItineraryPlanner />
+            </div>
           )}
 
           {/* Sightseeing Section */}

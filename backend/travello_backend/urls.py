@@ -33,6 +33,7 @@ urlpatterns = [
     path('api/auth/', include('authentication.urls')),
     path('api/', include('hotels.urls')),
     path('api/scraper/', include('scraper.urls')),
+    path('api/itineraries/', include('itineraries.urls')),
     path('api/token/', TokenObtainPairView.as_view(), name='token_obtain_pair'),
     path('api/token/refresh/', TokenRefreshView.as_view(), name='token_refresh'),
 ]

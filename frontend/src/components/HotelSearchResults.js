@@ -826,14 +826,29 @@ const HotelSearchResults = () => {
           adults: parseInt(params.adults) || 2,
           rooms: 1,
           children: parseInt(params.children) || 0,
-          use_cache: true
+          use_cache: true,
+          // Match Booking URL sort order so first page hotels and prices align
+          order: 'price',
         })
       });
 
       const data = await response.json();
 
       if (data.success && data.hotels?.length > 0) {
-        const transformedHotels = data.hotels.map((hotel, index) => {
+        const seenKeys = new Set();
+        const transformedHotels = data.hotels.reduce((acc, hotel, index) => {
+          // Strong de-dup key: normalised URL (without query) or fallback to name
+          let key = (hotel.url || '').toLowerCase();
+          if (key) {
+            key = key.split('?')[0];
+          } else {
+            key = (hotel.name || '').toLowerCase().trim();
+          }
+          if (!key || seenKeys.has(key)) {
+            return acc;
+          }
+          seenKeys.add(key);
+
           let pricePerNight = 5000;
           if (hotel.price) {
             const priceMatch = hotel.price.match(/[\d,]+/);
@@ -872,8 +887,8 @@ const HotelSearchResults = () => {
             ? hotel.distance
             : '';
 
-          return {
-            id: `scraped-${index}`,
+          acc.push({
+            id: `scraped-${acc.length}`,
             name: hotel.name || 'Hotel',
             city: params.destination || 'Lahore',
             address: hotelAddress,
@@ -901,8 +916,9 @@ const HotelSearchResults = () => {
             is_scraped: true,
             latitude: hotel.latitude || 31.5204 + (Math.random() - 0.5) * 0.1,
             longitude: hotel.longitude || 74.3587 + (Math.random() - 0.5) * 0.1
-          };
-        });
+          });
+          return acc;
+        }, []);
 
         setHotels(transformedHotels);
         setFilteredHotels(transformedHotels);
