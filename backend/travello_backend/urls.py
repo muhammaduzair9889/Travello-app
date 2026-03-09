@@ -10,6 +10,11 @@ from rest_framework_simplejwt.views import (
 )
 
 
+def health_check(request):
+    """Unauthenticated health-check for Docker / load-balancers."""
+    return JsonResponse({'status': 'ok'})
+
+
 def api_root(request):
     """Root endpoint for API"""
     return JsonResponse({
@@ -30,6 +35,7 @@ def api_root(request):
 
 urlpatterns = [
     path('', api_root, name='api_root'),
+    path('health/', health_check, name='health_check'),
     path('admin/', admin.site.urls),
     path('api/auth/', include('authentication.urls')),
     path('api/', include('hotels.urls')),

@@ -542,6 +542,7 @@ Set `REACT_APP_API_URL` to your deployed backend URL.
 |----------|----------|
 | [ARCHITECTURE_GUIDE.md](ARCHITECTURE_GUIDE.md) | ML recommendation pipeline, auth internals (OTP + JWT + OAuth), Stripe payment flows, reviews system, AI chatbot, file structure |
 | [SCRAPER_GUIDE.md](SCRAPER_GUIDE.md) | Puppeteer/Selenium scraper, bot detection bypass, CSS selectors, caching, rate limiting, troubleshooting |
+| [DOCKER_DEPLOYMENT_GUIDE.md](DOCKER_DEPLOYMENT_GUIDE.md) | Docker images, container setup, AWS EC2 deployment (step-by-step), environment variables, production checklist |
 
 ---
 

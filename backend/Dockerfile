@@ -61,7 +61,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     DJANGO_SETTINGS_MODULE=travello_backend.travello_backend.settings \
     PORT=8000 \
     # Gunicorn picks this up automatically
-    WEB_CONCURRENCY=3
+    WEB_CONCURRENCY=2
 
 # Runtime-only system libraries (no gcc, no -dev packages)
 #   libpq5          → PostgreSQL client lib for psycopg2
@@ -112,15 +112,15 @@ EXPOSE ${PORT}
 # Tini as entrypoint — reaps zombie processes & forwards signals
 ENTRYPOINT ["tini", "--"]
 
-HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
-    CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:${PORT}/api/')" || exit 1
+HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
+    CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:${PORT}/health/')" || exit 1
 
 # Gunicorn with production-grade settings
 CMD ["gunicorn", "travello_backend.travello_backend.wsgi:application", \
      "--bind", "0.0.0.0:8000", \
-     "--workers", "3", \
-     "--worker-class", "gthread", \
+     "--workers", "2", \
      "--threads", "2", \
+     "--worker-class", "gthread", \
      "--timeout", "120",  \
      "--graceful-timeout", "30", \
      "--keep-alive", "5", \
