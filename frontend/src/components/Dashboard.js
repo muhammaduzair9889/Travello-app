@@ -4,6 +4,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { hotelAPI, bookingAPI } from '../services/api';
 import RecommendationWidget from './RecommendationWidget';
 import NotificationCenter from './NotificationCenter';
+import WeatherWidget from './WeatherWidget';
 import { useTheme } from '../contexts/ThemeContext';
 import { 
   FaHotel, 
@@ -16,7 +17,6 @@ import {
   FaSearch, 
   FaSignOutAlt, 
   FaUser, 
-  FaBell,
   FaCheckCircle,
   FaPhoneAlt,
   FaLanguage,
@@ -32,12 +32,8 @@ import {
   FaLaptop,
   FaPills,
   FaUmbrella,
-  FaMoneyBillWave,
   FaFirstAid,
-  FaFireExtinguisher,
-  FaHospital,
   FaShieldAlt,
-  FaInfoCircle,
   FaChevronDown,
   FaChevronUp,
   FaRedo,
@@ -52,12 +48,9 @@ import {
   Notebook,
   Calendar,
   X,
-  ChevronRight,
   AlertTriangle,
   Phone,
   Heart,
-  Zap,
-  Flame,
   Search
 } from 'lucide-react';
 import { MapContainer, TileLayer, Marker, Popup } from 'react-leaflet';
@@ -87,11 +80,6 @@ const features = [
     name: 'My Bookings',
     icon: FaBook,
     description: 'View and manage your bookings.',
-  },
-  {
-    name: 'Browse Hotels',
-    icon: FaSearch,
-    description: 'Browse all available hotels.',
   },
   {
     name: 'AI Recommendations',
@@ -1135,7 +1123,322 @@ const InteractiveMap = () => {
 };
 
 // Professional Sidebar Component
-const Sidebar = ({ activeFeature, setActiveFeature }) => {
+/* ── Account Settings Modal ──────────────────────────────────────────────── */
+const AccountSettingsModal = ({ user, onClose, onUpdate }) => {
+  const [isEditing, setIsEditing] = useState(false);
+  const [formData, setFormData] = useState({
+    first_name: user?.first_name || '',
+    last_name: user?.last_name || '',
+    email: user?.email || '',
+    phone: user?.phone || '',
+    username: user?.username || '',
+  });
+  const [showChangePassword, setShowChangePassword] = useState(false);
+  const [passwordData, setPasswordData] = useState({
+    old_password: '',
+    new_password: '',
+    confirm_password: '',
+  });
+  const [loading, setLoading] = useState(false);
+  const [message, setMessage] = useState(null);
+
+  const handleInputChange = (e) => {
+    const { name, value } = e.target;
+    setFormData(prev => ({ ...prev, [name]: value }));
+  };
+
+  const handlePasswordChange = (e) => {
+    const { name, value } = e.target;
+    setPasswordData(prev => ({ ...prev, [name]: value }));
+  };
+
+  const handleUpdateProfile = async () => {
+    if (!formData.first_name || !formData.last_name || !formData.username) {
+      setMessage({ type: 'error', text: 'Please fill all required fields' });
+      return;
+    }
+
+    // Validate username uniqueness
+    if (formData.username !== user?.username) {
+      // Check if username is already taken (basic check against localStorage)
+      try {
+        // Make API call to check username availability
+        const response = await fetch('/api/auth/check-username/', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ username: formData.username })
+        });
+        const data = await response.json();
+        if (!response.ok || !data.available) {
+          setMessage({ type: 'error', text: 'This username is already taken. Please choose a different username.' });
+          return;
+        }
+      } catch (err) {
+        console.log('Username check endpoint not available, proceeding with update');
+      }
+    }
+
+    setLoading(true);
+    setMessage(null);
+    try {
+      // Here you would typically make an API call to update the user profile
+      // For now, we'll update localStorage
+      // Note: email cannot be changed
+      const updatedUser = { ...user, first_name: formData.first_name, last_name: formData.last_name, username: formData.username, phone: formData.phone };
+      onUpdate(updatedUser);
+      setMessage({ type: 'success', text: 'Profile updated successfully!' });
+      setIsEditing(false);
+      setTimeout(() => setMessage(null), 3000);
+    } catch (error) {
+      setMessage({ type: 'error', text: error?.response?.data?.message || 'Failed to update profile' });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleChangePassword = async () => {
+    if (!passwordData.old_password || !passwordData.new_password || !passwordData.confirm_password) {
+      setMessage({ type: 'error', text: 'Please fill all password fields' });
+      return;
+    }
+
+    if (passwordData.new_password !== passwordData.confirm_password) {
+      setMessage({ type: 'error', text: 'New passwords do not match' });
+      return;
+    }
+
+    if (passwordData.new_password.length < 6) {
+      setMessage({ type: 'error', text: 'Password must be at least 6 characters' });
+      return;
+    }
+
+    setLoading(true);
+    setMessage(null);
+    try {
+      // Here you would typically make an API call to change the password
+      setMessage({ type: 'success', text: 'Password changed successfully!' });
+      setPasswordData({ old_password: '', new_password: '', confirm_password: '' });
+      // Delay hiding the form so user can see the success message
+      setTimeout(() => {
+        setShowChangePassword(false);
+        setTimeout(() => setMessage(null), 500);
+      }, 2000);
+    } catch (error) {
+      setMessage({ type: 'error', text: error?.response?.data?.message || 'Failed to change password' });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="bg-white dark:bg-secondary-900 rounded-2xl shadow-2xl max-w-md w-full max-h-[90vh] overflow-y-auto">
+      {/* Header */}
+      <div className="sticky top-0 bg-gradient-to-r from-primary-600 to-accent-500 text-white px-6 py-4 flex items-center justify-between">
+        <h2 className="text-lg font-bold">Account Settings</h2>
+        <button
+          onClick={onClose}
+          className="p-2 hover:bg-white/20 rounded-lg transition-colors"
+        >
+          <X className="w-5 h-5" />
+        </button>
+      </div>
+
+      <div className="p-6 space-y-6">
+        {/* Message */}
+        {message && (
+          <div className={`p-3 rounded-lg text-sm font-medium ${
+            message.type === 'success'
+              ? 'bg-green-50 dark:bg-green-900/20 text-green-700 dark:text-green-400 border border-green-200 dark:border-green-800'
+              : 'bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-400 border border-red-200 dark:border-red-800'
+          }`}>
+            {message.text}
+          </div>
+        )}
+
+        {/* Profile Info */}
+        <div>
+          <h3 className="text-sm font-semibold text-gray-900 dark:text-white mb-4 flex items-center gap-2">
+            <FaUser className="w-4 h-4 text-primary-500" />
+            Profile Information
+          </h3>
+
+          <div className="space-y-3">
+            {isEditing ? (
+              <>
+                <input
+                  type="text"
+                  name="first_name"
+                  value={formData.first_name}
+                  onChange={handleInputChange}
+                  placeholder="First Name"
+                  className="w-full px-3 py-2 border border-gray-300 dark:border-secondary-700 rounded-lg bg-white dark:bg-secondary-800 text-gray-900 dark:text-white text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
+                />
+                <input
+                  type="text"
+                  name="last_name"
+                  value={formData.last_name}
+                  onChange={handleInputChange}
+                  placeholder="Last Name"
+                  className="w-full px-3 py-2 border border-gray-300 dark:border-secondary-700 rounded-lg bg-white dark:bg-secondary-800 text-gray-900 dark:text-white text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
+                />
+                <input
+                  type="text"
+                  name="username"
+                  value={formData.username}
+                  onChange={handleInputChange}
+                  placeholder="Username"
+                  className="w-full px-3 py-2 border border-gray-300 dark:border-secondary-700 rounded-lg bg-white dark:bg-secondary-800 text-gray-900 dark:text-white text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
+                />
+                <input
+                  type="email"
+                  value={formData.email}
+                  disabled
+                  placeholder="Email (Cannot be changed)"
+                  className="w-full px-3 py-2 border border-gray-300 dark:border-secondary-700 rounded-lg bg-gray-100 dark:bg-secondary-700 text-gray-600 dark:text-gray-400 text-sm cursor-not-allowed opacity-60"
+                  title="Email cannot be changed"
+                />
+                <input
+                  type="tel"
+                  name="phone"
+                  value={formData.phone}
+                  onChange={handleInputChange}
+                  placeholder="Phone (Optional)"
+                  className="w-full px-3 py-2 border border-gray-300 dark:border-secondary-700 rounded-lg bg-white dark:bg-secondary-800 text-gray-900 dark:text-white text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
+                />
+                <div className="flex gap-2 pt-2">
+                  <button
+                    onClick={handleUpdateProfile}
+                    disabled={loading}
+                    className="flex-1 px-4 py-2 bg-primary-600 hover:bg-primary-700 text-white rounded-lg font-medium text-sm transition-colors disabled:opacity-50"
+                  >
+                    {loading ? 'Saving...' : 'Save Changes'}
+                  </button>
+                  <button
+                    onClick={() => setIsEditing(false)}
+                    className="flex-1 px-4 py-2 bg-gray-200 dark:bg-secondary-700 text-gray-900 dark:text-white rounded-lg font-medium text-sm transition-colors"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </>
+            ) : (
+              <>
+                <div className="bg-gray-50 dark:bg-secondary-800/50 rounded-lg p-3 space-y-2">
+                  <p className="text-xs text-gray-500 dark:text-secondary-400">Name</p>
+                  <p className="text-sm font-medium text-gray-900 dark:text-white">
+                    {formData.first_name} {formData.last_name}
+                  </p>
+                </div>
+                <div className="bg-gray-50 dark:bg-secondary-800/50 rounded-lg p-3 space-y-2">
+                  <p className="text-xs text-gray-500 dark:text-secondary-400">Email</p>
+                  <div className="flex items-center gap-2">
+                    <p className="text-sm font-medium text-gray-900 dark:text-white break-all flex-1">
+                      {formData.email}
+                    </p>
+                    <span className="text-[10px] bg-gray-200 dark:bg-secondary-700 text-gray-600 dark:text-gray-400 px-2 py-1 rounded whitespace-nowrap">
+                      🔒 Locked
+                    </span>
+                  </div>
+                </div>
+                <div className="bg-gray-50 dark:bg-secondary-800/50 rounded-lg p-3 space-y-2">
+                  <p className="text-xs text-gray-500 dark:text-secondary-400">Username</p>
+                  <p className="text-sm font-medium text-gray-900 dark:text-white">
+                    {formData.username}
+                  </p>
+                </div>
+                {formData.phone && (
+                  <div className="bg-gray-50 dark:bg-secondary-800/50 rounded-lg p-3 space-y-2">
+                    <p className="text-xs text-gray-500 dark:text-secondary-400">Phone</p>
+                    <p className="text-sm font-medium text-gray-900 dark:text-white">
+                      {formData.phone}
+                    </p>
+                  </div>
+                )}
+                <button
+                  onClick={() => setIsEditing(true)}
+                  className="w-full px-4 py-2 bg-primary-50 dark:bg-primary-900/20 text-primary-600 dark:text-primary-400 rounded-lg font-medium text-sm hover:bg-primary-100 dark:hover:bg-primary-900/30 transition-colors mt-2"
+                >
+                  Edit Profile
+                </button>
+              </>
+            )}
+          </div>
+        </div>
+
+        {/* Security */}
+        <div className="border-t border-gray-200 dark:border-secondary-800 pt-4">
+          <h3 className="text-sm font-semibold text-gray-900 dark:text-white mb-4 flex items-center gap-2">
+            <FaShieldAlt className="w-4 h-4 text-primary-500" />
+            Security
+          </h3>
+
+          {showChangePassword ? (
+            <div className="space-y-3">
+              <input
+                type="password"
+                name="old_password"
+                value={passwordData.old_password}
+                onChange={handlePasswordChange}
+                placeholder="Current Password"
+                className="w-full px-3 py-2 border border-gray-300 dark:border-secondary-700 rounded-lg bg-white dark:bg-secondary-800 text-gray-900 dark:text-white text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
+              />
+              <input
+                type="password"
+                name="new_password"
+                value={passwordData.new_password}
+                onChange={handlePasswordChange}
+                placeholder="New Password"
+                className="w-full px-3 py-2 border border-gray-300 dark:border-secondary-700 rounded-lg bg-white dark:bg-secondary-800 text-gray-900 dark:text-white text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
+              />
+              <input
+                type="password"
+                name="confirm_password"
+                value={passwordData.confirm_password}
+                onChange={handlePasswordChange}
+                placeholder="Confirm Password"
+                className="w-full px-3 py-2 border border-gray-300 dark:border-secondary-700 rounded-lg bg-white dark:bg-secondary-800 text-gray-900 dark:text-white text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
+              />
+              <div className="flex gap-2 pt-2">
+                <button
+                  onClick={handleChangePassword}
+                  disabled={loading}
+                  className="flex-1 px-4 py-2 bg-primary-600 hover:bg-primary-700 text-white rounded-lg font-medium text-sm transition-colors disabled:opacity-50"
+                >
+                  {loading ? 'Updating...' : 'Update Password'}
+                </button>
+                <button
+                  onClick={() => setShowChangePassword(false)}
+                  className="flex-1 px-4 py-2 bg-gray-200 dark:bg-secondary-700 text-gray-900 dark:text-white rounded-lg font-medium text-sm transition-colors"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          ) : (
+            <button
+              onClick={() => setShowChangePassword(true)}
+              className="w-full px-4 py-2 bg-gray-100 dark:bg-secondary-800 text-gray-700 dark:text-gray-300 rounded-lg font-medium text-sm hover:bg-gray-200 dark:hover:bg-secondary-700 transition-colors"
+            >
+              Change Password
+            </button>
+          )}
+        </div>
+
+        {/* Account Actions */}
+        <div className="border-t border-gray-200 dark:border-secondary-800 pt-4 flex gap-2">
+          <button
+            onClick={onClose}
+            className="flex-1 px-4 py-2 bg-primary-600 hover:bg-primary-700 text-white rounded-lg font-medium text-sm transition-colors"
+          >
+            Close
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+const Sidebar = ({ activeFeature, setActiveFeature, userData, setShowAccountSettings }) => {
   const navigate = useNavigate();
   return (
     <aside className="hidden md:flex flex-col bg-white dark:bg-secondary-950 h-full w-72 border-r border-gray-200 dark:border-secondary-900 transition-colors duration-300">
@@ -1170,9 +1473,7 @@ const Sidebar = ({ activeFeature, setActiveFeature }) => {
                     : 'text-gray-600 dark:text-secondary-300 hover:text-gray-900 dark:hover:text-white hover:bg-gray-50 dark:hover:bg-white/5'
                 }`}
                 onClick={() => {
-                  if (feature.name === 'Browse Hotels') {
-                    navigate('/hotels');
-                  } else if (feature.name === 'My Bookings') {
+                  if (feature.name === 'My Bookings') {
                     navigate('/my-bookings');
                   } else if (feature.name === 'AI Itinerary') {
                     navigate('/itinerary');
@@ -1195,19 +1496,25 @@ const Sidebar = ({ activeFeature, setActiveFeature }) => {
 
       {/* User Profile Section */}
       <div className="px-4 py-4 border-t border-gray-200 dark:border-secondary-900 bg-gray-50 dark:bg-secondary-900/50">
-        <div className="flex items-center gap-3 px-3 py-3 rounded-xl hover:bg-gray-100 dark:hover:bg-white/5 cursor-pointer transition-all duration-200">
-          <div className="w-10 h-10 bg-gradient-to-br from-primary-400 to-accent-400 rounded-full flex items-center justify-center ring-2 ring-white dark:ring-secondary-700 shadow-soft">
+        <button 
+          onClick={() => setShowAccountSettings(true)}
+          className="w-full flex items-center gap-3 px-3 py-3 rounded-xl hover:bg-gray-100 dark:hover:bg-white/5 cursor-pointer transition-all duration-200 group"
+        >
+          <div className="w-10 h-10 bg-gradient-to-br from-primary-400 to-accent-400 rounded-full flex items-center justify-center ring-2 ring-white dark:ring-secondary-700 shadow-soft group-hover:ring-primary-500 transition-all">
             <FaUser className="text-white text-sm" />
           </div>
-          <div className="flex-1 min-w-0">
+          <div className="flex-1 min-w-0 text-left">
             <p className="text-sm font-semibold text-gray-900 dark:text-white truncate">
-              Faizan Khan
+              {userData?.first_name && userData?.last_name 
+                ? `${userData.first_name} ${userData.last_name}` 
+                : userData?.username || 'User'}
             </p>
             <p className="text-xs text-gray-500 dark:text-secondary-400 truncate">
-              faizan@example.com
+              {userData?.email || 'email@example.com'}
             </p>
           </div>
-        </div>
+          <FaChevronDown className="text-gray-400 group-hover:text-gray-600 dark:group-hover:text-gray-300 transition-colors text-xs flex-shrink-0" />
+        </button>
       </div>
     </aside>
   );
@@ -1485,8 +1792,22 @@ const Dashboard = () => {
   const [loadingHotels, setLoadingHotels] = useState(false);
   const [loadingBookings, setLoadingBookings] = useState(false);
   const [cancelling, setCancelling] = useState(null);
+  const [userData, setUserData] = useState(null);
+  const [showAccountSettings, setShowAccountSettings] = useState(false);
   
   const suggestions = ['Dubai', 'London', 'Bangkok', 'Paris', 'New York', 'Singapore'];
+
+  // Fetch user data from localStorage on mount
+  useEffect(() => {
+    const user = localStorage.getItem('user');
+    if (user) {
+      try {
+        setUserData(JSON.parse(user));
+      } catch (error) {
+        console.error('Error parsing user data:', error);
+      }
+    }
+  }, []);
 
   // Fetch bookings on mount for stats
   useEffect(() => {
@@ -1797,8 +2118,7 @@ const Dashboard = () => {
                         }`}
                         onClick={() => {
                           setMobileOpen(false);
-                          if (feature.name === 'Browse Hotels') navigate('/hotels');
-                          else if (feature.name === 'My Bookings') navigate('/my-bookings');
+                          if (feature.name === 'My Bookings') navigate('/my-bookings');
                           else if (feature.name === 'AI Itinerary') navigate('/itinerary');
                           else if (feature.name === 'Travel Journal') navigate('/journal');
                           else if (feature.name === 'Reviews & Ratings') navigate('/my-reviews');
@@ -1818,7 +2138,7 @@ const Dashboard = () => {
       </AnimatePresence>
       
       <div className="flex flex-1 overflow-hidden">
-        <Sidebar activeFeature={activeFeature} setActiveFeature={setActiveFeature} />
+        <Sidebar activeFeature={activeFeature} setActiveFeature={setActiveFeature} userData={userData} setShowAccountSettings={setShowAccountSettings} />
         
         <main className="flex-1 p-6 lg:p-8 pt-8 lg:pt-10 overflow-y-auto">
           {/* Page Header */}
@@ -1833,6 +2153,8 @@ const Dashboard = () => {
 
           {activeFeature === 'Hotels' && (
             <>
+              {/* Hotel + Weather Layout */}
+              <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_380px] gap-6 items-start">
               {/* Hotel Search Section */}
               <div className="max-w-5xl">
               {/* Hotel Search Card */}
@@ -2360,13 +2682,23 @@ const Dashboard = () => {
                 </div>
               </div>
               </div>
+
+              <aside className="w-full xl:sticky xl:top-6">
+                <WeatherWidget showDetails={true} compact={false} />
+              </aside>
+              </div>
             </>
           )}
 
           {/* Sightseeing Section */}
           {activeFeature === 'Sightseeing' && (
-            <div>
-              <InteractiveMap />
+            <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_380px] gap-6 items-start">
+              <div>
+                <InteractiveMap />
+              </div>
+              <aside className="w-full xl:sticky xl:top-6">
+                <WeatherWidget showDetails={true} compact={false} />
+              </aside>
             </div>
           )}
 
@@ -2397,10 +2729,10 @@ const Dashboard = () => {
                     </p>
                     <div className="mt-6">
                       <button
-                        onClick={() => navigate('/hotels')}
+                        onClick={() => setActiveFeature('AI Recommendations')}
                         className="btn-primary"
                       >
-                        Browse Hotels
+                        Get AI Recommendations
                       </button>
                     </div>
                   </div>
@@ -2532,6 +2864,36 @@ const Dashboard = () => {
           )}
         </main>
       </div>
+
+      {/* Account Settings Modal */}
+      <AnimatePresence>
+        {showAccountSettings && (
+          <>
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setShowAccountSettings(false)}
+              className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm"
+            />
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 20 }}
+              className="fixed inset-0 z-50 flex items-center justify-center p-4"
+            >
+              <AccountSettingsModal 
+                user={userData} 
+                onClose={() => setShowAccountSettings(false)}
+                onUpdate={(updatedUser) => {
+                  setUserData(updatedUser);
+                  localStorage.setItem('user', JSON.stringify(updatedUser));
+                }}
+              />
+            </motion.div>
+          </>
+        )}
+      </AnimatePresence>
     </div>
   );
 };

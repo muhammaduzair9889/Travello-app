@@ -21,7 +21,7 @@ def generate_otp():
 
 def send_otp_email(user_email, otp_code, purpose='signup'):
     """
-    Send OTP via email using Gmail SMTP
+    Send OTP via email using Gmail SMTP (synchronous)
     
     Args:
         user_email: Email address to send OTP to
@@ -32,6 +32,11 @@ def send_otp_email(user_email, otp_code, purpose='signup'):
         bool: True if email sent successfully, False otherwise
     """
     try:
+        # Verify email configuration
+        if not settings.DEFAULT_FROM_EMAIL:
+            logger.error("DEFAULT_FROM_EMAIL not configured in settings")
+            return False
+        
         # Prepare email context based on purpose
         context = {
             'otp_code': otp_code,
@@ -97,21 +102,31 @@ If you did not request this code, please ignore this email.
 This is an automated email from Travello. Please do not reply to this email.
         """
         
-        # Send email
-        send_mail(
+        # Log the attempt
+        logger.info(f"[OTP] Attempting to send {purpose} OTP to {user_email}")
+        logger.info(f"[OTP] Code: {otp_code}")
+        logger.info(f"[OTP] From: {settings.DEFAULT_FROM_EMAIL}")
+        logger.info(f"[OTP] Subject: {subject}")
+        
+        # Send email synchronously (most reliable)
+        num_sent = send_mail(
             subject=subject,
             message=plain_message,
             from_email=settings.DEFAULT_FROM_EMAIL,
             recipient_list=[user_email],
             html_message=html_message,
-            fail_silently=False,
+            fail_silently=False,  # Let exceptions bubble up for proper logging
         )
         
-        logger.info(f"OTP email sent successfully to {user_email} for {purpose}")
-        return True
+        if num_sent > 0:
+            logger.info(f"[OTP] ✓ Email sent successfully to {user_email} (purpose: {purpose})")
+            return True
+        else:
+            logger.error(f"[OTP] ✗ send_mail returned 0 for {user_email}")
+            return False
         
     except Exception as e:
-        logger.error(f"Failed to send OTP email to {user_email}: {str(e)}")
+        logger.error(f"[OTP] ✗ Exception sending OTP email to {user_email}: {str(e)}", exc_info=True)
         return False
 
 

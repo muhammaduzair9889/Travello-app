@@ -20,12 +20,10 @@ const ResetPassword = lazy(() => import('./components/ResetPassword'));
 const Dashboard = lazy(() => import('./components/Dashboard'));
 const AdminLogin = lazy(() => import('./components/AdminLogin'));
 const ChatWidget = lazy(() => import('./components/ChatWidget'));
-const HotelsList = lazy(() => import('./components/HotelsList'));
 const HotelSearchLahore = lazy(() => import('./components/HotelSearchLahore'));
 const HotelResults = lazy(() => import('./components/HotelResults'));
 const HotelSearchResults = lazy(() => import('./components/HotelSearchResults'));
 const HotelBooking = lazy(() => import('./components/HotelBooking'));
-const HotelDetailPage = lazy(() => import('./components/HotelDetailPage'));
 const HotelDetailsPage = lazy(() => import('./components/HotelDetailsPage'));
 const Payment = lazy(() => import('./components/Payment'));
 const PaymentPage = lazy(() => import('./components/PaymentPage'));
@@ -80,6 +78,18 @@ function App() {
   const [hasShownSplash, setHasShownSplash] = useState(false);
 
   useEffect(() => {
+    // Handle chunk loading errors
+    const handleChunkError = (event) => {
+      if (/Loading chunk \d+ failed/g.test(event.message) || /ChunkLoadError/g.test(event.message)) {
+        window.location.reload();
+      }
+    };
+
+    window.addEventListener('error', handleChunkError);
+    return () => window.removeEventListener('error', handleChunkError);
+  }, []);
+
+  useEffect(() => {
     // Check if splash has been shown in this session
     const splashShown = sessionStorage.getItem('splashShown');
     if (splashShown) {
@@ -120,8 +130,6 @@ function App() {
                   <Route path="/verify-reset-otp" element={<VerifyResetOtp />} />
                   <Route path="/reset-password" element={<ResetPassword />} />
                   <Route path="/admin-login" element={<AdminLogin />} />
-                  <Route path="/hotels" element={<HotelsList />} />
-                  <Route path="/hotels/:id" element={<HotelDetailPage />} />
                   <Route path="/hotels/search-lahore" element={<HotelSearchLahore />} />
                   <Route path="/hotels/results" element={<HotelResults />} />
                   <Route path="/hotels/search-results" element={<HotelSearchResults />} />

@@ -12,6 +12,7 @@ import os
 import json
 import hashlib
 import threading
+import time
 from decimal import Decimal, InvalidOperation
 from urllib.parse import urlencode
 
@@ -22,7 +23,7 @@ from rest_framework.response import Response
 from django.conf import settings as django_settings
 from django.core.cache import cache
 from django.views.decorators.csrf import csrf_exempt
-from django.db import transaction
+from django.db import transaction, OperationalError
 from django.utils import timezone
 from django.utils.dateparse import parse_date
 
@@ -32,11 +33,46 @@ from .models import HotelScrapeRun, ScrapedHotelResult, ScrapeJob
 logger = logging.getLogger(__name__)
 
 # ── Config (from settings, with safe defaults) ─────────────────────────────
-SCRAPER_MAX_RESULTS = getattr(django_settings, 'SCRAPER_MAX_RESULTS', 300)
+SCRAPER_MAX_RESULTS = getattr(django_settings, 'SCRAPER_MAX_RESULTS', 1400)
 SCRAPER_CACHE_TTL = getattr(django_settings, 'SCRAPER_CACHE_TTL_MINS', 15) * 60  # seconds
 SCRAPER_CONCURRENCY = getattr(django_settings, 'SCRAPER_CONCURRENCY_LIMIT', 4)
-SCRAPER_MAX_SECONDS = getattr(django_settings, 'SCRAPER_MAX_SECONDS', 65)
-SCRAPER_HARD_TIMEOUT = getattr(django_settings, 'SCRAPER_HARD_TIMEOUT', 90)
+SCRAPER_MAX_SECONDS = getattr(django_settings, 'SCRAPER_MAX_SECONDS', 400)
+SCRAPER_HARD_TIMEOUT = getattr(django_settings, 'SCRAPER_HARD_TIMEOUT', 320)
+
+
+def _to_bool(value, default=False):
+    """Parse common truthy/falsey request values safely."""
+    if value is None:
+        return default
+    if isinstance(value, bool):
+        return value
+    return str(value).strip().lower() in {'1', 'true', 'yes', 'y', 'on'}
+
+
+def _is_db_locked(err):
+    return 'database is locked' in str(err).lower()
+
+
+def _db_retry(callable_fn, max_retries=5, base_sleep=0.1):
+    """Retry a DB write callable to survive transient SQLite lock contention."""
+    last_err = None
+    for attempt in range(max_retries):
+        try:
+            return callable_fn()
+        except OperationalError as e:
+            last_err = e
+            if _is_db_locked(e) and attempt < max_retries - 1:
+                time.sleep(base_sleep * (2 ** attempt))
+                continue
+            raise
+    if last_err:
+        raise last_err
+
+
+# ── Database retry helper for SQLite locks ──
+def _update_job_safe(job_id, **kwargs):
+    """Update ScrapeJob with retry logic for database locks"""
+    _db_retry(lambda: ScrapeJob.objects.filter(pk=job_id).update(**kwargs))
 
 
 # ── Helpers ─────────────────────────────────────────────────────────────────
@@ -251,18 +287,60 @@ def _scrape_worker(job_id, search_params, checkin_date, checkout_date):
         job.progress_pct = 10
         job.save(update_fields=['status', 'progress_pct', 'updated_at'])
 
-        search_params['max_seconds'] = SCRAPER_MAX_SECONDS
-        search_params['max_results'] = SCRAPER_MAX_RESULTS
+        # Keep scraper budget below subprocess hard timeout so it can exit gracefully
+        # and return parsed hotels instead of being force-killed.
+        is_deep_mode = _to_bool(search_params.get('deep_mode'), False)
+        coverage_priority = _to_bool(search_params.get('coverage_priority'), False)
+        quick_mode = _to_bool(search_params.get('quick_mode'), False)
+        safe_max_seconds = max(75, int(SCRAPER_HARD_TIMEOUT) - 35)
+
+        # Use a lower default runtime for normal mode to avoid long waits.
+        if is_deep_mode:
+            default_max_seconds = SCRAPER_MAX_SECONDS
+        elif quick_mode:
+            default_max_seconds = 85
+        elif coverage_priority:
+            default_max_seconds = 260
+        else:
+            default_max_seconds = 130
+        requested_max_seconds = int(search_params.get('max_seconds') or default_max_seconds)
+        if is_deep_mode:
+            search_params['max_seconds'] = min(requested_max_seconds, safe_max_seconds)
+        elif quick_mode:
+            search_params['max_seconds'] = min(requested_max_seconds, min(safe_max_seconds, 95))
+        elif coverage_priority:
+            search_params['max_seconds'] = min(requested_max_seconds, min(safe_max_seconds, 280))
+        else:
+            search_params['max_seconds'] = min(requested_max_seconds, min(safe_max_seconds, 220))
+
+        # Balance default result caps by mode.
+        if is_deep_mode:
+            default_max_results = 1400
+        elif quick_mode:
+            default_max_results = 450
+        elif coverage_priority:
+            default_max_results = 1100
+        else:
+            default_max_results = 520
+        requested_max_results = int(search_params.get('max_results') or default_max_results)
+        if is_deep_mode:
+            search_params['max_results'] = min(requested_max_results, 1400)
+        elif quick_mode:
+            search_params['max_results'] = min(requested_max_results, 450)
+        elif coverage_priority:
+            search_params['max_results'] = min(requested_max_results, 1100)
+        else:
+            search_params['max_results'] = min(requested_max_results, 520)
 
         logger.info(f"[Job {job_id}] Puppeteer starting — {search_params.get('city')}")
 
-        # Update progress to 30% after launching
-        ScrapeJob.objects.filter(pk=job_id).update(progress_pct=30)
+        # Move to midpoint once the scraper process is fully launched.
+        _update_job_safe(job_id, progress_pct=50)
 
         hotels, meta = _run_puppeteer(search_params)
         logger.info(f"[Job {job_id}] Puppeteer done — {len(hotels)} hotels")
 
-        ScrapeJob.objects.filter(pk=job_id).update(progress_pct=70)
+        _update_job_safe(job_id, progress_pct=70)
 
         if not hotels:
             job.refresh_from_db()
@@ -289,35 +367,36 @@ def _scrape_worker(job_id, search_params, checkin_date, checkout_date):
         meta['adults_requested'] = int(search_params.get('adults', 2) or 2)
         meta['total_hotels'] = len(hotels)
 
-        # Persist to DB
-        run = _persist_hotels(hotels, search_params, meta, checkin_date, checkout_date, reported_count)
-
         # Cache
         ck = _cache_key(search_params)
         cache.set(ck, {'hotels': hotels, 'meta': meta}, SCRAPER_CACHE_TTL)
 
-        # Update job
+        # Mark the job completed immediately so polling clients can fetch results
+        # without waiting for heavier database persistence work.
         job.status = ScrapeJob.Status.COMPLETED
         job.hotel_count = len(hotels)
         job.progress_pct = 100
         job.results = {'hotels': hotels, 'meta': meta}
-        if run:
-            job.run = run
         job.save(update_fields=[
-            'status', 'hotel_count', 'progress_pct', 'results',
-            'run', 'updated_at',
+            'status', 'hotel_count', 'progress_pct', 'results', 'updated_at',
         ])
-        logger.info(f"[Job {job_id}] Completed — {len(hotels)} hotels cached")
+        logger.info(f"[Job {job_id}] Completed — {len(hotels)} hotels ready")
+
+        # Persist scrape run for analytics/history after completion response path.
+        run = _db_retry(lambda: _persist_hotels(hotels, search_params, meta, checkin_date, checkout_date, reported_count))
+        if run:
+            _update_job_safe(job_id, run_id=run.id)
+        logger.info(f"[Job {job_id}] Persisted — {len(hotels)} hotels cached")
 
     except subprocess.TimeoutExpired:
         logger.error(f"[Job {job_id}] Timed out")
-        ScrapeJob.objects.filter(pk=job_id).update(
+        _update_job_safe(job_id,
             status=ScrapeJob.Status.FAILED,
             error_message='Scraper timed out',
         )
     except Exception as e:
         logger.error(f"[Job {job_id}] Error: {e}", exc_info=True)
-        ScrapeJob.objects.filter(pk=job_id).update(
+        _update_job_safe(job_id,
             status=ScrapeJob.Status.FAILED,
             error_message=str(e)[:500],
         )
@@ -350,6 +429,12 @@ def scrape_hotels(request):
             'rooms': request.data.get('rooms', 1),
             'children': request.data.get('children', 0),
             'order': request.data.get('order', 'price'),
+            # Deep mode is expensive; keep it opt-in so default searches complete quickly.
+            'deep_mode': _to_bool(request.data.get('deep_search'), False),
+            # Fast mode by default; clients can opt in to deeper coverage when needed.
+            'coverage_priority': _to_bool(request.data.get('coverage_priority'), False),
+            # Quick mode is enabled by default for best responsiveness.
+            'quick_mode': _to_bool(request.data.get('quick_mode'), True),
         }
 
         checkin_date = parse_date(search_params.get('checkin') or '')
@@ -387,10 +472,10 @@ def scrape_hotels(request):
         # Clean up stale RUNNING/QUEUED jobs older than 3 minutes
         from datetime import timedelta
         stale_cutoff = timezone.now() - timedelta(minutes=3)
-        stale_count = ScrapeJob.objects.filter(
+        stale_count = _db_retry(lambda: ScrapeJob.objects.filter(
             status__in=[ScrapeJob.Status.QUEUED, ScrapeJob.Status.RUNNING],
             updated_at__lt=stale_cutoff,
-        ).update(status=ScrapeJob.Status.FAILED, error_message='Auto-cleaned stale job')
+        ).update(status=ScrapeJob.Status.FAILED, error_message='Auto-cleaned stale job'))
         if stale_count:
             logger.info(f"Cleaned up {stale_count} stale scrape job(s)")
             at_capacity = ScrapeJob.active_count() >= SCRAPER_CONCURRENCY  # recheck
@@ -431,26 +516,31 @@ def scrape_hotels(request):
                 if cached_hotels:
                     cache.set(ck, {'hotels': cached_hotels, 'meta': cached_meta}, SCRAPER_CACHE_TTL)
 
-            # Start a new scrape job regardless (for fresh data)
-            job = ScrapeJob.objects.create(
-                city=search_params['city'],
-                dest_id=search_params.get('dest_id') or '',
-                dest_type=search_params.get('dest_type', 'city'),
-                checkin=checkin_date,
-                checkout=checkout_date,
-                adults=int(search_params.get('adults', 2) or 2),
-                rooms=int(search_params.get('rooms', 1) or 1),
-                children=int(search_params.get('children', 0) or 0),
-            )
-            job_id = str(job.id)
-            t = threading.Thread(
-                target=_scrape_worker,
-                args=(job.id, dict(search_params), checkin_date, checkout_date),
-                daemon=True,
-            )
-            ScrapeJob.register_thread(job.id, t)
-            t.start()
-            logger.info(f"Enqueued scrape job {job_id} for {search_params['city']}")
+            # If we already have fresh cached data, return it immediately without
+            # launching another expensive background scrape.
+            if cached_hotels:
+                job_id = str(recent_completed.id) if recent_completed else None
+                logger.info(f"Using cached recent results for {search_params['city']} (no new job enqueued)")
+            else:
+                job = _db_retry(lambda: ScrapeJob.objects.create(
+                    city=search_params['city'],
+                    dest_id=search_params.get('dest_id') or '',
+                    dest_type=search_params.get('dest_type', 'city'),
+                    checkin=checkin_date,
+                    checkout=checkout_date,
+                    adults=int(search_params.get('adults', 2) or 2),
+                    rooms=int(search_params.get('rooms', 1) or 1),
+                    children=int(search_params.get('children', 0) or 0),
+                ))
+                job_id = str(job.id)
+                t = threading.Thread(
+                    target=_scrape_worker,
+                    args=(job.id, dict(search_params), checkin_date, checkout_date),
+                    daemon=True,
+                )
+                ScrapeJob.register_thread(job.id, t)
+                t.start()
+                logger.info(f"Enqueued scrape job {job_id} for {search_params['city']}")
         else:
             # At capacity and no running job for these params
             logger.warning(f"At capacity ({ScrapeJob.active_count()}/{SCRAPER_CONCURRENCY})")
@@ -515,6 +605,17 @@ def scrape_hotels(request):
             'meta': {},
         }, status=status.HTTP_503_SERVICE_UNAVAILABLE)
 
+    except OperationalError as e:
+        logger.error(f"Error in scrape_hotels (db): {e}", exc_info=True)
+        return Response(
+            {
+                'success': False,
+                'error': 'Database temporarily busy. Please retry in a few seconds.',
+                'message': 'Failed to initiate scrape.',
+                'retryable': True,
+            },
+            status=status.HTTP_503_SERVICE_UNAVAILABLE,
+        )
     except Exception as e:
         logger.error(f"Error in scrape_hotels: {e}", exc_info=True)
         return Response(

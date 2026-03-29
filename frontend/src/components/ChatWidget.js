@@ -213,6 +213,7 @@ export default function ChatWidget() {
   const [isLoading, setIsLoading] = useState(false);
   const [messages, setMessages] = useState([]);
   const [bookingFlow, setBookingFlow] = useState(null);
+  const [isMaximized, setIsMaximized] = useState(false); // Windows-style maximize/restore
   const scrollRef = useRef(null);
   const inputRef = useRef(null);
   const sessionId = useMemo(getSessionId, []);
@@ -369,12 +370,13 @@ export default function ChatWidget() {
 
       {/* Chat Panel */}
       <div
-        className={`fixed bottom-24 right-6 z-40 w-[22rem] max-w-[90vw] bg-white dark:bg-gray-800 rounded-xl shadow-2xl border border-gray-200 dark:border-gray-700 overflow-hidden transform transition-all duration-200 ${
-          isOpen ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-4 pointer-events-none'
-        }`}
+        className={`fixed z-40 bg-white dark:bg-gray-800 rounded-xl shadow-2xl border border-gray-200 dark:border-gray-700 overflow-hidden transform transition-all duration-300 flex flex-col ${
+          isOpen ? 'opacity-100 visible' : 'opacity-0 invisible'
+        } ${!isMaximized ? 'bottom-24 right-6 w-[22rem] h-80' : 'w-[95vw] h-[90vh]'}`}
+        style={isMaximized && isOpen ? { position: 'fixed', bottom: 'auto', right: 'auto', left: '50%', top: '50%', transform: 'translate(-50%, -50%)' } : {}}
       >
         {/* Header */}
-        <div className="bg-primary-600 dark:bg-blue-700 text-white px-4 py-3 flex items-center justify-between">
+        <div className="bg-primary-600 dark:bg-blue-700 text-white px-4 py-2.5 flex items-center justify-between">
           <div className="flex items-center gap-2">
             <div className="w-2 h-2 bg-green-400 rounded-full" />
             <span className="font-semibold text-sm">Travello AI Assistant</span>
@@ -384,15 +386,35 @@ export default function ChatWidget() {
               </span>
             )}
           </div>
-          <button onClick={toggle} className="text-white/70 hover:text-white transition-colors p-1">
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
-              <path d="M6.28 5.22a.75.75 0 0 0-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 1 0 1.06 1.06L10 11.06l3.72 3.72a.75.75 0 1 0 1.06-1.06L11.06 10l3.72-3.72a.75.75 0 0 0-1.06-1.06L10 8.94 6.28 5.22Z" />
-            </svg>
-          </button>
+          <div className="flex items-center gap-1">
+            {/* Maximize/Restore button (Windows-style) */}
+            <button
+              onClick={() => setIsMaximized(!isMaximized)}
+              title={isMaximized ? 'Restore' : 'Maximize'}
+              className="text-white/70 hover:text-white transition-colors p-1"
+            >
+              {isMaximized ? (
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+                  <path d="M3 4a1 1 0 011-1h4a1 1 0 010 2H5.414l7.293 7.293a1 1 0 01-1.414 1.414L4 6.414V8a1 1 0 01-2 0V4z" />
+                  <path d="M13 13a1 1 0 01.707.293l2.828-2.829a1 1 0 01-1.414-1.414l-2.828 2.829A1 1 0 0113 13z" />
+                </svg>
+              ) : (
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+                  <path d="M4.5 3A1.5 1.5 0 003 4.5v5A1.5 1.5 0 004.5 11h5A1.5 1.5 0 0011 9.5v-5A1.5 1.5 0 009.5 3h-5zm9 6a1.5 1.5 0 011.5-1.5h5A1.5 1.5 0 0121 9.5v5a1.5 1.5 0 01-1.5 1.5h-5A1.5 1.5 0 0113 14.5v-5z" />
+                </svg>
+              )}
+            </button>
+            {/* Close button */}
+            <button onClick={toggle} className="text-white/70 hover:text-white transition-colors p-1">
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+                <path d="M6.28 5.22a.75.75 0 0 0-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 1 0 1.06 1.06L10 11.06l3.72 3.72a.75.75 0 1 0 1.06-1.06L11.06 10l3.72-3.72a.75.75 0 0 0-1.06-1.06L10 8.94 6.28 5.22Z" />
+              </svg>
+            </button>
+          </div>
         </div>
 
         {/* Messages area */}
-        <div ref={scrollRef} className="h-80 max-h-[70vh] overflow-y-auto p-4 space-y-3 bg-gray-50 dark:bg-gray-900">
+        <div ref={scrollRef} className="flex-1 overflow-y-auto p-4 space-y-3 bg-gray-50 dark:bg-gray-900">
           {messages.map((m) => {
             /* ── Suggestion chips ── */
             if (m.role === 'suggestions') {
@@ -527,7 +549,7 @@ export default function ChatWidget() {
         </div>
 
         {/* Input area */}
-        <div className="p-3 bg-white dark:bg-gray-800 border-t border-gray-200 dark:border-gray-700">
+        <div className="flex-shrink-0 p-3 bg-white dark:bg-gray-800 border-t border-gray-200 dark:border-gray-700">
           {bookingFlow && (
             <div className="mb-2 flex items-center gap-2 text-xs text-yellow-700 dark:text-yellow-400 bg-yellow-50 dark:bg-yellow-900/20 px-2 py-1 rounded-lg">
               <span>📝 Booking in progress</span>

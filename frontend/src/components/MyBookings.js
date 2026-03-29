@@ -155,10 +155,10 @@ const MyBookings = () => {
               No bookings yet
             </p>
             <button
-              onClick={() => navigate('/hotels')}
+              onClick={() => navigate('/dashboard')}
               className="px-6 py-3 bg-sky-600 hover:bg-sky-700 text-white rounded-lg font-medium transition-colors"
             >
-              Browse Hotels
+              Return to Dashboard
             </button>
           </div>
         ) : (

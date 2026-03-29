@@ -20,17 +20,20 @@ from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
 urlpatterns = [
     # Admin panel
     path('admin/', admin.site.urls),
-    
+
     # JWT Token endpoints
     path('api/token/', TokenObtainPairView.as_view(), name='token_obtain_pair'),
     path('api/token/refresh/', TokenRefreshView.as_view(), name='token_refresh'),
-    
+
     # Authentication endpoints (signup, login, etc.)
     path('api/', include('authentication.urls')),
-    
+
     # Hotel and booking endpoints
     path('api/', include('hotels.urls')),
-    
+
+    # Weather endpoints
+    path('api/weather/', include('weather.urls')),
+
     # Scraper endpoints
     path('api/scraper/', include('scraper.urls')),
 ]

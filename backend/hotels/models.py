@@ -142,8 +142,9 @@ class RoomType(models.Model):
             total=Sum('rooms_booked')
         )['total'] or 0
         
-        # Available = total - booked
-        return max(0, self.total_rooms - booked)
+        # Available = total - booked (handle None value)
+        total = self.total_rooms or 0
+        return max(0, total - booked)
     
     @classmethod
     def check_availability_for_hotel(cls, hotel, check_in, check_out):

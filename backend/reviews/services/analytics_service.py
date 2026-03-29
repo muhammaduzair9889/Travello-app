@@ -9,7 +9,20 @@ def get_hotel_analytics(hotel_id):
     """
     Return aggregate review analytics for a hotel.
     """
-    qs = Review.objects.filter(hotel_id=hotel_id, status='published')
+    try:
+        normalized_hotel_id = int(hotel_id)
+    except (TypeError, ValueError):
+        return {
+            'total_reviews': 0,
+            'average_rating': 0,
+            'rating_distribution': {str(i): 0 for i in range(1, 6)},
+            'aspect_averages': {},
+            'sentiment_distribution': {'positive': 0, 'neutral': 0, 'negative': 0},
+            'recommendation_rate': 0,
+            'recent_trend': 'stable',
+        }
+
+    qs = Review.objects.filter(hotel_id=normalized_hotel_id, status='published')
 
     if not qs.exists():
         return {

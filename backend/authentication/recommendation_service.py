@@ -34,13 +34,8 @@ PAKISTAN_DESTINATIONS = {
 }
 
 # Questions the AI preference engine asks the user (in order)
+# NOTE: City is now hardcoded to Lahore only - removed selection prompt
 PREFERENCE_QUESTIONS = [
-    {
-        'key': 'destination',
-        'question': 'Which city or destination in Pakistan would you like to visit?',
-        'options': ['Lahore', 'Karachi', 'Islamabad', 'Rawalpindi', 'Faisalabad', 'Multan'],
-        'type': 'single',
-    },
     {
         'key': 'interests',
         'question': 'What type of places would you like to visit during your trip?',
@@ -159,6 +154,9 @@ def _load_travel_knowledge() -> dict:
 def start_recommendation() -> dict:
     """Create a new recommendation session and return the first question."""
     session = _create_session()
+    # Auto-set destination to Lahore (only city available)
+    session['profile']['destination'] = 'Lahore'
+    session['updated_at'] = datetime.utcnow()
     q = PREFERENCE_QUESTIONS[0]
     return {
         'session_id': session['id'],
@@ -486,6 +484,9 @@ def _trigger_scrape(city: str, dest_id: str, checkin: str, checkout: str,
 
     search_params['max_seconds'] = 140
     search_params['max_results'] = 600
+    search_params['coverage_priority'] = False
+    search_params['deep_mode'] = False
+    search_params['quick_mode'] = True
 
     hotels, meta = _run_puppeteer(search_params)
 

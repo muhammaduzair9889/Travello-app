@@ -1,7 +1,7 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import { FaStar, FaArrowLeft, FaSpellCheck, FaCheck, FaTimes, FaPaperPlane, FaMagic, FaCamera, FaTrash, FaCloudUploadAlt } from 'react-icons/fa';
+import { FaStar, FaArrowLeft, FaCheck, FaTimes, FaPaperPlane, FaMagic, FaCamera, FaCloudUploadAlt } from 'react-icons/fa';
 import { reviewAPI, bookingAPI } from '../services/api';
 
 const ASPECT_LABELS = {
@@ -89,7 +89,7 @@ const ReviewForm = () => {
 
   const MAX_PHOTOS = 5;
   const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5 MB
-  const ALLOWED_TYPES = ['image/jpeg', 'image/png', 'image/webp'];
+  const ALLOWED_TYPES = useMemo(() => ['image/jpeg', 'image/png', 'image/webp'], []);
 
   // Generate preview URLs when files change
   useEffect(() => {
@@ -120,7 +120,7 @@ const ReviewForm = () => {
       }
     }
     setSelectedFiles((prev) => [...prev, ...incoming]);
-  }, [selectedFiles.length, existingPhotos.length]);
+  }, [selectedFiles.length, existingPhotos.length, ALLOWED_TYPES, MAX_FILE_SIZE, MAX_PHOTOS]);
 
   const removeFile = (index) => {
     setSelectedFiles((prev) => prev.filter((_, i) => i !== index));

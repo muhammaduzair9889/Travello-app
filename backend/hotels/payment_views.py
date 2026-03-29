@@ -9,6 +9,7 @@ import logging
 import json
 import hashlib
 import os
+from math import ceil
 from decimal import Decimal
 from rest_framework import status
 from rest_framework.decorators import api_view, permission_classes
@@ -659,15 +660,39 @@ class SimulatedPaymentView(APIView):
                 'validation_error': 'dates_invalid'
             }, status=status.HTTP_400_BAD_REQUEST)
 
-        # 4. Adults match occupancy?
-        if booking.room_type and booking.adults:
-            if booking.adults > (booking.room_type.max_occupancy * booking.rooms_booked):
-                return Response({
-                    'success': False,
-                    'error': f'Total adults ({booking.adults}) exceeds maximum occupancy for {booking.rooms_booked} room(s).',
-                    'validation_error': 'occupancy_exceeded',
-                    'max_occupancy': booking.room_type.max_occupancy * booking.rooms_booked
-                }, status=status.HTTP_400_BAD_REQUEST)
+        # 4. Guest count matches occupancy?
+        if booking.room_type:
+            total_adults = booking.adults or 0
+            total_children = booking.children or 0
+            total_guests = total_adults + total_children
+            allowed_guests = (booking.room_type.max_occupancy or 0) * (booking.rooms_booked or 1)
+
+            if total_guests > allowed_guests:
+                # Scraped hotel entries are seeded with conservative occupancy.
+                # Auto-align for existing scraped bookings so payment isn't blocked.
+                hotel_desc = (booking.hotel.description or '').lower() if booking.hotel else ''
+                is_scraped_booking = 'scraped hotel:' in hotel_desc
+                if is_scraped_booking:
+                    required_per_room = max(1, ceil(total_guests / max(1, booking.rooms_booked or 1)))
+                    if required_per_room > (booking.room_type.max_occupancy or 0):
+                        booking.room_type.max_occupancy = required_per_room
+                        booking.room_type.save(update_fields=['max_occupancy'])
+                        allowed_guests = (booking.room_type.max_occupancy or 0) * (booking.rooms_booked or 1)
+                        logger.info(
+                            f"Auto-adjusted occupancy for scraped booking {booking.id}: "
+                            f"max_occupancy={booking.room_type.max_occupancy}, total_guests={total_guests}"
+                        )
+
+                if total_guests > allowed_guests:
+                    return Response({
+                        'success': False,
+                        'error': f'Total guests ({total_guests}) exceed maximum occupancy for {booking.rooms_booked} room(s).',
+                        'validation_error': 'occupancy_exceeded',
+                        'total_guests': total_guests,
+                        'adults': total_adults,
+                        'children': total_children,
+                        'max_occupancy': allowed_guests,
+                    }, status=status.HTTP_400_BAD_REQUEST)
 
         # ── PROCESS PAYMENT ─────────────────────────────────
 
@@ -822,6 +847,8 @@ class BookingInvoiceView(APIView):
 
     def get(self, request, booking_id):
         from django.http import HttpResponse
+        import json
+        from html import escape
 
         try:
             booking = Booking.objects.select_related('hotel', 'room_type', 'user').get(id=booking_id)
@@ -843,6 +870,40 @@ class BookingInvoiceView(APIView):
         room_type = booking.room_type.get_type_display() if booking.room_type else 'N/A'
         guest = booking.guest_name or (booking.user.get_full_name() if booking.user else 'Guest')
         email = booking.guest_email or (booking.user.email if booking.user else '')
+        guest_phone = booking.guest_phone or 'N/A'
+
+        lead_pax = None
+        passengers = []
+        if booking.special_requests:
+            try:
+                details = json.loads(booking.special_requests)
+                if isinstance(details, dict):
+                    if isinstance(details.get('lead_pax'), dict):
+                        lead_pax = details.get('lead_pax')
+                    if isinstance(details.get('passengers'), list):
+                        passengers = [p for p in details.get('passengers') if isinstance(p, dict)]
+            except Exception:
+                pass
+
+        lead_pax_html = ''
+        if lead_pax:
+            lead_name = escape(str(lead_pax.get('name') or guest))
+            lead_dob = escape(str(lead_pax.get('dob') or 'N/A'))
+            lead_contact = escape(str(lead_pax.get('phone') or lead_pax.get('email') or guest_phone))
+            lead_pax_html = (
+                f'<div class="row"><span class="label">Lead Passenger</span><span class="value">{lead_name}</span></div>'
+                f'<div class="row"><span class="label">Lead DOB</span><span class="value">{lead_dob}</span></div>'
+                f'<div class="row"><span class="label">Lead Contact</span><span class="value">{lead_contact}</span></div>'
+            )
+
+        passengers_html = ''
+        if passengers:
+            items = []
+            for idx, p in enumerate(passengers, 1):
+                pax_name = escape(str(p.get('name') or 'N/A'))
+                pax_type = escape(str(p.get('type') or 'guest'))
+                items.append(f'<div class="row"><span class="label">Passenger {idx}</span><span class="value">{pax_name} ({pax_type})</span></div>')
+            passengers_html = ''.join(items)
 
         html = f"""<!DOCTYPE html>
 <html>
@@ -882,9 +943,13 @@ class BookingInvoiceView(APIView):
         
         <div class="section">
             <h3>Guest Information</h3>
-            <div class="row"><span class="label">Guest Name</span><span class="value">{guest}</span></div>
-            <div class="row"><span class="label">Email</span><span class="value">{email}</span></div>
-            <div class="row"><span class="label">Phone</span><span class="value">{booking.guest_phone or 'N/A'}</span></div>
+            <div class="row"><span class="label">Guest Name</span><span class="value">{escape(str(guest))}</span></div>
+            <div class="row"><span class="label">Email</span><span class="value">{escape(str(email))}</span></div>
+            <div class="row"><span class="label">Phone</span><span class="value">{escape(str(guest_phone))}</span></div>
+            <div class="row"><span class="label">Adults</span><span class="value">{booking.adults or 0}</span></div>
+            <div class="row"><span class="label">Children</span><span class="value">{booking.children or 0}</span></div>
+            {lead_pax_html}
+            {passengers_html}
         </div>
         
         <div class="section">

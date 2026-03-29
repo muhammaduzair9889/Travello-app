@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { FaCalendarAlt, FaUsers, FaBed } from 'react-icons/fa';
@@ -7,7 +7,7 @@ import { bookingAPI } from '../services/api';
 const HotelBooking = () => {
   const navigate = useNavigate();
   const location = useLocation();
-  const { hotel, roomType, checkIn, checkOut } = location.state || {};
+  const { hotel, roomType, checkIn, checkOut, adults: initialAdults = 2, children: initialChildren = 0 } = location.state || {};
 
   // Get initial rooms from hotel.roomsSelected if available
   const initialRooms = hotel?.roomsSelected || 1;
@@ -18,7 +18,54 @@ const HotelBooking = () => {
     checkOutDate: checkOut || '',
   });
 
+  const [guestInfo, setGuestInfo] = useState({
+    leadName: '',
+    leadDob: '',
+    phone: '',
+    email: '',
+  });
+  const [paxDetails, setPaxDetails] = useState([]);
+  const [formError, setFormError] = useState('');
+
   const [loading, setLoading] = useState(false);
+
+  const adultsCount = Math.max(1, Number(initialAdults) || 1);
+  const childrenCount = Math.max(0, Number(initialChildren) || 0);
+  const totalGuests = adultsCount + childrenCount;
+
+  useEffect(() => {
+    const nextPax = [];
+
+    for (let i = 0; i < adultsCount; i++) {
+      nextPax.push({
+        id: `adult-${i + 1}`,
+        type: 'adult',
+        label: i === 0 ? 'Adult 1 (Lead Passenger)' : `Adult ${i + 1}`,
+        fullName: '',
+      });
+    }
+
+    for (let i = 0; i < childrenCount; i++) {
+      nextPax.push({
+        id: `child-${i + 1}`,
+        type: 'child',
+        label: `Child ${i + 1}`,
+        fullName: '',
+      });
+    }
+
+    setPaxDetails((prev) =>
+      nextPax.map((item) => {
+        const existing = prev.find((p) => p.id === item.id);
+        return existing ? { ...item, fullName: existing.fullName } : item;
+      })
+    );
+  }, [adultsCount, childrenCount]);
+
+  const numberOfDays = useMemo(() => {
+    if (!formData.checkInDate || !formData.checkOutDate) return 0;
+    return Math.ceil((new Date(formData.checkOutDate) - new Date(formData.checkInDate)) / (1000 * 60 * 60 * 24));
+  }, [formData.checkInDate, formData.checkOutDate]);
 
   if (!hotel || !roomType) {
     return (
@@ -29,7 +76,7 @@ const HotelBooking = () => {
             onClick={() => navigate('/dashboard')}
             className="px-6 py-3 bg-sky-600 text-white rounded-lg"
           >
-            Browse Hotels
+            Return to Dashboard
           </button>
         </div>
       </div>
@@ -74,8 +121,34 @@ const HotelBooking = () => {
 
   const totalPrice = calculateTotalPrice();
 
+  const validateGuestForm = () => {
+    if (!guestInfo.leadName.trim()) {
+      return 'Please enter lead passenger full name.';
+    }
+
+    if (!guestInfo.leadDob) {
+      return 'Please enter lead passenger date of birth.';
+    }
+
+    if (!guestInfo.phone.trim() && !guestInfo.email.trim()) {
+      return 'Please provide at least phone number or email.';
+    }
+
+    if (guestInfo.email.trim() && !/^\S+@\S+\.\S+$/.test(guestInfo.email.trim())) {
+      return 'Please enter a valid email address.';
+    }
+
+    const missingNames = paxDetails.some((p) => !p.fullName.trim());
+    if (missingNames) {
+      return 'Please enter all passenger names.';
+    }
+
+    return '';
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
+    setFormError('');
     
     if (!formData.checkInDate || !formData.checkOutDate) {
       alert('Please select check-in and check-out dates');
@@ -92,10 +165,34 @@ const HotelBooking = () => {
       return;
     }
 
+    const guestValidationError = validateGuestForm();
+    if (guestValidationError) {
+      setFormError(guestValidationError);
+      return;
+    }
+
     setLoading(true);
 
     try {
       let bookingId;
+
+      const leadPassengerName = guestInfo.leadName.trim();
+      const leadPassengerEmail = guestInfo.email.trim();
+      const leadPassengerPhone = guestInfo.phone.trim();
+      const serializedGuestDetails = JSON.stringify({
+        lead_pax: {
+          name: leadPassengerName,
+          dob: guestInfo.leadDob,
+          phone: leadPassengerPhone || null,
+          email: leadPassengerEmail || null,
+        },
+        passengers: paxDetails.map((p) => ({
+          type: p.type,
+          name: p.fullName.trim(),
+        })),
+        adults: adultsCount,
+        children: childrenCount,
+      });
 
       if (hotel.is_scraped) {
         // For scraped hotels, create hotel + booking via dedicated endpoint
@@ -112,6 +209,12 @@ const HotelBooking = () => {
           check_in: formData.checkInDate,
           check_out: formData.checkOutDate,
           rooms_booked: formData.rooms,
+          adults: adultsCount,
+          children: childrenCount,
+          guest_name: leadPassengerName,
+          guest_email: leadPassengerEmail,
+          guest_phone: leadPassengerPhone,
+          special_requests: serializedGuestDetails,
         };
 
         const response = await bookingAPI.createScrapedBooking(scrapedData);
@@ -122,9 +225,18 @@ const HotelBooking = () => {
           hotel: hotel.id,
           room_type: roomType,
           rooms_booked: formData.rooms,
+          adults: adultsCount,
+          children: childrenCount,
+          check_in: formData.checkInDate,
+          check_out: formData.checkOutDate,
           check_in_date: formData.checkInDate,
           check_out_date: formData.checkOutDate,
           total_price: totalPrice,
+          payment_method: 'ONLINE',
+          guest_name: leadPassengerName,
+          guest_email: leadPassengerEmail,
+          guest_phone: leadPassengerPhone,
+          special_requests: serializedGuestDetails,
         };
 
         const response = await bookingAPI.createBooking(bookingData);
@@ -166,6 +278,10 @@ const HotelBooking = () => {
               <span className="text-gray-700 dark:text-gray-300">
                 Room Type : <span className="font-semibold capitalize">{hotel.selectedRoom?.name || roomType}</span>
               </span>
+            </div>
+            <div className="flex items-center gap-2 mb-2 text-gray-700 dark:text-gray-300">
+              <FaUsers className="text-sky-600" />
+              <span>{adultsCount} adult{adultsCount > 1 ? 's' : ''}{childrenCount > 0 ? `, ${childrenCount} child${childrenCount > 1 ? 'ren' : ''}` : ''}</span>
             </div>
             <p className="text-lg font-bold text-sky-600 dark:text-sky-400">
               PKR {pricePerDay.toLocaleString('en-PK')} per night
@@ -238,6 +354,106 @@ const HotelBooking = () => {
               </div>
             </div>
 
+            {/* Guest Details */}
+            <div className="p-6 bg-gray-50 dark:bg-gray-700/60 rounded-lg space-y-4 border border-gray-200 dark:border-gray-600">
+              <h3 className="text-lg font-semibold text-gray-800 dark:text-white">Guest Details</h3>
+              <p className="text-sm text-gray-600 dark:text-gray-400">
+                Add names for all {totalGuests} passenger{totalGuests > 1 ? 's' : ''}. Date of birth is required for lead passenger only.
+              </p>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                    Lead Passenger Name
+                  </label>
+                  <input
+                    type="text"
+                    className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-sky-500 focus:border-transparent outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                    value={guestInfo.leadName}
+                    onChange={(e) => {
+                      const value = e.target.value;
+                      setGuestInfo((prev) => ({ ...prev, leadName: value }));
+                      setPaxDetails((prev) => prev.map((p, idx) => (idx === 0 ? { ...p, fullName: value } : p)));
+                    }}
+                    placeholder="e.g., Ali Khan"
+                    required
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                    Lead Passenger Date of Birth
+                  </label>
+                  <input
+                    type="date"
+                    className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-sky-500 focus:border-transparent outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                    value={guestInfo.leadDob}
+                    onChange={(e) => setGuestInfo((prev) => ({ ...prev, leadDob: e.target.value }))}
+                    max={new Date().toISOString().split('T')[0]}
+                    required
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                    Phone Number
+                  </label>
+                  <input
+                    type="tel"
+                    className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-sky-500 focus:border-transparent outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                    value={guestInfo.phone}
+                    onChange={(e) => setGuestInfo((prev) => ({ ...prev, phone: e.target.value }))}
+                    placeholder="e.g., +92 300 1234567"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                    Email Address
+                  </label>
+                  <input
+                    type="email"
+                    className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-sky-500 focus:border-transparent outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                    value={guestInfo.email}
+                    onChange={(e) => setGuestInfo((prev) => ({ ...prev, email: e.target.value }))}
+                    placeholder="e.g., traveler@email.com"
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-3">
+                {paxDetails.map((pax) => (
+                  <div key={pax.id}>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                      {pax.label} Name
+                    </label>
+                    <input
+                      type="text"
+                      className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-sky-500 focus:border-transparent outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                      value={pax.fullName}
+                      onChange={(e) => {
+                        const value = e.target.value;
+                        setPaxDetails((prev) => prev.map((x) => (x.id === pax.id ? { ...x, fullName: value } : x)));
+                        if (pax.id === 'adult-1') {
+                          setGuestInfo((prev) => ({ ...prev, leadName: value }));
+                        }
+                      }}
+                      placeholder={`Enter ${pax.label.toLowerCase()} full name`}
+                      required
+                    />
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {formError && (
+              <div className="p-4 rounded-lg border border-red-300 bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-300 text-sm">
+                {formError}
+              </div>
+            )}
+
             {/* Price Summary */}
             {totalPrice > 0 && (
               <div className="p-6 bg-sky-50 dark:bg-sky-900/30 rounded-lg">
@@ -255,9 +471,7 @@ const HotelBooking = () => {
                   </div>
                   <div className="flex justify-between">
                     <span>Number of days:</span>
-                    <span>
-                      {Math.ceil((new Date(formData.checkOutDate) - new Date(formData.checkInDate)) / (1000 * 60 * 60 * 24))}
-                    </span>
+                    <span>{numberOfDays}</span>
                   </div>
                   <div className="border-t border-gray-300 dark:border-gray-600 pt-2 mt-2">
                     <div className="flex justify-between text-xl font-bold text-sky-600 dark:text-sky-400">
@@ -273,7 +487,7 @@ const HotelBooking = () => {
             <div className="flex gap-4">
               <button
                 type="button"
-                onClick={() => navigate('/hotels')}
+                onClick={() => navigate('/dashboard')}
                 className="flex-1 py-3 bg-gray-600 hover:bg-gray-700 text-white rounded-lg font-medium transition-colors"
               >
                 Cancel
