@@ -68,8 +68,7 @@ export const searchLahoreHotels = async (params = {}) => {
     checkIn = getDefaultCheckIn(),
     checkOut = getDefaultCheckOut(),
     adults = 2,
-    children = 0,
-    roomType = 'double'
+    children = 0
   } = params;
 
   try {
@@ -83,7 +82,10 @@ export const searchLahoreHotels = async (params = {}) => {
         adults: adults,
         children: children,
         rooms: 1,
-        use_cache: true
+        use_cache: true,
+        coverage_priority: false,
+        deep_search: false,
+        quick_mode: true,
       },
       {
         timeout: 15000,  // Should return in <1 s (no long wait)
@@ -262,8 +264,10 @@ const formatDate = (date) => {
   return `${year}-${month}-${day}`;
 };
 
-export default {
+const hotelSearchAPI = {
   searchLahoreHotels,
   getDefaultCheckIn,
   getDefaultCheckOut
 };
+
+export default hotelSearchAPI;

@@ -14,12 +14,7 @@ import {
   FaUtensils,
   FaCoffee,
   FaDumbbell,
-  FaSnowflake,
   FaConciergeBell,
-  FaSpa,
-  FaShuttleVan,
-  FaTv,
-  FaBath,
   FaCheck,
   FaUsers,
   FaBed,
@@ -405,6 +400,26 @@ const HotelDetailsPage = () => {
   const [selectedRoomCount, setSelectedRoomCount] = useState(0);
   const [hotelReviews, setHotelReviews] = useState([]);
   const [reviewAnalytics, setReviewAnalytics] = useState(null);
+  const [reviewsLoading, setReviewsLoading] = useState(false);
+
+  const normalizedHotelId = useMemo(() => {
+    if (typeof hotel?.id === 'number') return hotel.id;
+    if (typeof hotel?.id === 'string' && /^\d+$/.test(hotel.id)) return parseInt(hotel.id, 10);
+    return null;
+  }, [hotel?.id]);
+
+  const openGoogleMaps = () => {
+    const latitude = hotel?.latitude;
+    const longitude = hotel?.longitude;
+    const hasCoords = Number.isFinite(Number(latitude)) && Number.isFinite(Number(longitude));
+
+    const query = hasCoords
+      ? `${latitude},${longitude}`
+      : `${hotel?.name || 'Hotel'}, ${hotel?.city || 'Lahore'}`;
+
+    const url = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(query)}`;
+    window.open(url, '_blank', 'noopener,noreferrer');
+  };
 
   // Redirect if no hotel data
   useEffect(() => {
@@ -415,16 +430,46 @@ const HotelDetailsPage = () => {
 
   // Load real reviews for this hotel
   useEffect(() => {
-    if (hotel?.id) {
+    if (normalizedHotelId) {
+      setReviewsLoading(true);
       Promise.all([
-        reviewAPI.list({ hotel: hotel.id, ordering: '-created_at' }),
-        reviewAPI.analytics(hotel.id),
+        reviewAPI.list({ hotel: normalizedHotelId, ordering: '-created_at' }),
+        reviewAPI.analytics(normalizedHotelId),
       ]).then(([reviewsRes, analyticsRes]) => {
         setHotelReviews(reviewsRes.data || []);
         setReviewAnalytics(analyticsRes.data || null);
-      }).catch(() => {});
+      }).catch(() => {
+        setHotelReviews([]);
+        setReviewAnalytics(null);
+      }).finally(() => {
+        setReviewsLoading(false);
+      });
+    } else {
+      setHotelReviews([]);
+      setReviewAnalytics(null);
+      setReviewsLoading(false);
     }
-  }, [hotel?.id]);
+  }, [normalizedHotelId]);
+
+  const handleTabClick = (tabId) => {
+    setActiveTab(tabId);
+
+    const sectionMap = {
+      overview: 'overview-section',
+      info: 'availability-section',
+      facilities: 'facilities-section',
+      rules: 'house-rules-section',
+      reviews: 'guest-reviews-section',
+    };
+
+    const targetId = sectionMap[tabId];
+    if (targetId) {
+      const node = document.getElementById(targetId);
+      if (node) {
+        node.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }
+    }
+  };
 
   // Calculate nights
   const nights = useMemo(() => {
@@ -739,7 +784,7 @@ const HotelDetailsPage = () => {
             {tabs.map(tab => (
               <button
                 key={tab.id}
-                onClick={() => setActiveTab(tab.id)}
+                onClick={() => handleTabClick(tab.id)}
                 className={`px-4 py-3 text-sm font-medium whitespace-nowrap border-b-2 transition-colors ${
                   activeTab === tab.id
                     ? 'border-blue-600 text-blue-600'
@@ -776,11 +821,15 @@ const HotelDetailsPage = () => {
               {hotel.name}
             </h1>
             
-            <p className="text-blue-600 dark:text-blue-400 flex items-center gap-1 hover:underline cursor-pointer">
+            <button
+              type="button"
+              onClick={openGoogleMaps}
+              className="text-left text-blue-600 dark:text-blue-400 flex items-center gap-1 hover:underline cursor-pointer"
+            >
               <FaMapMarkerAlt />
               {hotel.address || hotel.location} – 
               <span className="text-green-600 dark:text-green-400 font-medium">Great location - show map</span>
-            </p>
+            </button>
           </div>
 
           <div className="flex items-center gap-4">
@@ -848,7 +897,7 @@ const HotelDetailsPage = () => {
             </div>
 
             {/* About Section */}
-            <div className="bg-white dark:bg-gray-800 rounded-xl p-6 shadow-sm border border-gray-200 dark:border-gray-700">
+            <div id="overview-section" className="bg-white dark:bg-gray-800 rounded-xl p-6 shadow-sm border border-gray-200 dark:border-gray-700">
               <h2 className="text-xl font-bold text-gray-900 dark:text-white mb-4">About this property</h2>
               
               <div className="space-y-4 text-gray-700 dark:text-gray-300">
@@ -879,7 +928,7 @@ const HotelDetailsPage = () => {
             </div>
 
             {/* Most Popular Facilities */}
-            <div className="bg-white dark:bg-gray-800 rounded-xl p-6 shadow-sm border border-gray-200 dark:border-gray-700">
+            <div id="facilities-section" className="bg-white dark:bg-gray-800 rounded-xl p-6 shadow-sm border border-gray-200 dark:border-gray-700">
               <h2 className="text-xl font-bold text-gray-900 dark:text-white mb-4">Most popular facilities</h2>
               
               <div className="flex flex-wrap gap-4">
@@ -950,16 +999,22 @@ const HotelDetailsPage = () => {
             </div>
 
             {/* Guest Reviews */}
-            <div className="bg-white dark:bg-gray-800 rounded-xl p-6 shadow-sm border border-gray-200 dark:border-gray-700">
+            <div id="guest-reviews-section" className="bg-white dark:bg-gray-800 rounded-xl p-6 shadow-sm border border-gray-200 dark:border-gray-700">
               <div className="flex items-center justify-between mb-6">
                 <h2 className="text-xl font-bold text-gray-900 dark:text-white">Guest reviews</h2>
                 <button
-                  onClick={() => navigate(`/reviews?hotel=${hotel.id || ''}`)}
+                  onClick={() => navigate(`/reviews?hotel=${normalizedHotelId || ''}`)}
                   className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium transition-colors"
                 >
                   See all reviews
                 </button>
               </div>
+
+              {reviewsLoading && (
+                <div className="mb-6 rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-700/40 p-4 text-sm text-gray-600 dark:text-gray-300">
+                  Loading real customer reviews...
+                </div>
+              )}
 
               <div className="flex items-center gap-4 mb-6">
                 <div className="w-12 h-12 bg-blue-600 text-white rounded-lg rounded-bl-none flex items-center justify-center text-xl font-bold">
@@ -1003,35 +1058,49 @@ const HotelDetailsPage = () => {
               {/* Real guest reviews */}
               {hotelReviews.length > 0 && (
                 <div className="mt-6 space-y-4">
-                  <h3 className="font-semibold text-gray-900 dark:text-white">Recent Guest Reviews:</h3>
-                  {hotelReviews.slice(0, 3).map((review) => (
-                    <div key={review.id} className="p-4 bg-gray-50 dark:bg-gray-700 rounded-lg border border-gray-200 dark:border-gray-600">
-                      <div className="flex items-center justify-between mb-2">
-                        <div className="flex items-center gap-2">
-                          <div className="w-8 h-8 bg-blue-600 text-white rounded-full flex items-center justify-center text-xs font-bold">
-                            {review.user_details?.first_name?.charAt(0)?.toUpperCase() || '?'}
+                  <h3 className="font-semibold text-gray-900 dark:text-white">Recent real customer reviews:</h3>
+                  {hotelReviews.slice(0, 5).map((review) => (
+                    <div
+                      key={review.id}
+                      className="rounded-xl border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-700/40 p-5 shadow-sm"
+                    >
+                      <div className="flex items-start justify-between gap-3 mb-3">
+                        <div className="flex items-center gap-3 min-w-0">
+                          <div className="w-10 h-10 bg-gradient-to-br from-blue-600 to-indigo-600 text-white rounded-full flex items-center justify-center text-sm font-bold">
+                            {(review.user_details?.first_name?.charAt(0) || review.user_details?.username?.charAt(0) || '?').toUpperCase()}
                           </div>
                           <div>
-                            <p className="text-sm font-semibold text-gray-800 dark:text-white">
-                              {review.user_details?.first_name || 'Guest'}
+                            <p className="text-sm font-semibold text-gray-900 dark:text-white">
+                              {review.user_details?.first_name || review.user_details?.username || 'Guest'}
                             </p>
-                            <p className="text-xs text-gray-500 dark:text-gray-400">
+                            <p className="text-xs text-gray-500 dark:text-gray-400 flex items-center gap-2">
                               {new Date(review.created_at).toLocaleDateString('en-US', { month: 'short', year: 'numeric' })}
                               {review.trip_type && ` · ${review.trip_type} trip`}
+                              {review.is_verified_stay && <span className="text-green-600 dark:text-green-400 font-medium">Verified stay</span>}
                             </p>
                           </div>
                         </div>
-                        <div className="flex gap-0.5">
-                          {[1, 2, 3, 4, 5].map((s) => (
-                            <FaStar key={s} className={`text-xs ${s <= review.overall_rating ? 'text-amber-400' : 'text-gray-300 dark:text-gray-600'}`} />
-                          ))}
+
+                        <div className="flex items-center gap-2 bg-blue-50 dark:bg-blue-900/20 px-3 py-1.5 rounded-lg border border-blue-100 dark:border-blue-800">
+                          <span className="text-sm font-bold text-blue-700 dark:text-blue-300">{Number(review.overall_rating || 0).toFixed(1)}</span>
+                          <div className="flex gap-0.5">
+                            {[1, 2, 3, 4, 5].map((s) => (
+                              <FaStar key={s} className={`text-xs ${s <= review.overall_rating ? 'text-amber-400' : 'text-gray-300 dark:text-gray-600'}`} />
+                            ))}
+                          </div>
                         </div>
                       </div>
-                      <p className="text-sm font-semibold text-gray-800 dark:text-white mb-1">{review.title}</p>
-                      <p className="text-sm text-gray-700 dark:text-gray-300 line-clamp-3">{review.content}</p>
+
+                      <p className="text-base font-semibold text-gray-900 dark:text-white mb-1">{review.title}</p>
+                      <p className="text-sm leading-6 text-gray-700 dark:text-gray-200 line-clamp-4">{review.content}</p>
+
+                      {typeof review.helpful_count === 'number' && review.helpful_count > 0 && (
+                        <p className="text-xs text-gray-500 dark:text-gray-400 mt-3">{review.helpful_count} people found this review helpful</p>
+                      )}
+
                       {review.replies?.length > 0 && (
-                        <div className="mt-2 ml-4 p-2 bg-blue-50 dark:bg-blue-900/20 border-l-2 border-blue-500 rounded text-xs text-gray-600 dark:text-gray-300">
-                          <span className="font-bold text-blue-700 dark:text-blue-400">🏨 Hotel Response: </span>
+                        <div className="mt-3 ml-2 p-3 bg-blue-50 dark:bg-blue-900/20 border-l-4 border-blue-500 rounded text-xs text-gray-700 dark:text-gray-200">
+                          <span className="font-bold text-blue-700 dark:text-blue-300">Hotel response: </span>
                           {review.replies[0].content}
                         </div>
                       )}
@@ -1040,12 +1109,12 @@ const HotelDetailsPage = () => {
                 </div>
               )}
 
-              {hotelReviews.length === 0 && (
-                <p className="mt-6 text-gray-500 dark:text-gray-400 text-sm">No guest reviews yet. Be the first to share your experience!</p>
+              {!reviewsLoading && hotelReviews.length === 0 && (
+                <p className="mt-6 text-gray-500 dark:text-gray-400 text-sm">No real customer reviews found for this hotel yet.</p>
               )}
 
               <button
-                onClick={() => navigate(`/reviews?hotel=${hotel.id || ''}`)}
+                onClick={() => navigate(`/reviews?hotel=${normalizedHotelId || ''}`)}
                 className="mt-4 px-4 py-2 border border-blue-600 text-blue-600 rounded-lg font-medium hover:bg-blue-50 dark:hover:bg-blue-900/30 transition-colors"
               >
                 {hotelReviews.length > 0 ? `Read all ${reviewAnalytics?.total_reviews || hotelReviews.length} reviews` : 'View Reviews'}
@@ -1053,7 +1122,7 @@ const HotelDetailsPage = () => {
             </div>
 
             {/* House Rules */}
-            <div className="bg-white dark:bg-gray-800 rounded-xl p-6 shadow-sm border border-gray-200 dark:border-gray-700">
+            <div id="house-rules-section" className="bg-white dark:bg-gray-800 rounded-xl p-6 shadow-sm border border-gray-200 dark:border-gray-700">
               <div className="flex items-center justify-between mb-4">
                 <div>
                   <h2 className="text-xl font-bold text-gray-900 dark:text-white">House rules</h2>
@@ -1183,7 +1252,7 @@ const HotelDetailsPage = () => {
 
             {/* Map Preview */}
             <div className="bg-white dark:bg-gray-800 rounded-xl overflow-hidden shadow-sm border border-gray-200 dark:border-gray-700">
-              <div className="h-48">
+              <div className="h-48 relative cursor-pointer group" onClick={openGoogleMaps}>
                 <MapContainer
                   center={[hotel.latitude || 31.5204, hotel.longitude || 74.3587]}
                   zoom={15}
@@ -1195,11 +1264,23 @@ const HotelDetailsPage = () => {
                     attribution='&copy; OpenStreetMap'
                   />
                   <Marker position={[hotel.latitude || 31.5204, hotel.longitude || 74.3587]}>
-                    <Popup>{hotel.name}</Popup>
+                    <Popup>
+                      <div className="text-sm">
+                        <p className="font-semibold">{hotel.name}</p>
+                        <button type="button" onClick={openGoogleMaps} className="text-blue-600 hover:underline mt-1">
+                          Open in Google Maps
+                        </button>
+                      </div>
+                    </Popup>
                   </Marker>
                 </MapContainer>
+                <div className="absolute inset-0 bg-black/0 group-hover:bg-black/5 transition-colors" />
               </div>
-              <button className="w-full py-3 text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/30 font-medium transition-colors">
+              <button
+                type="button"
+                onClick={openGoogleMaps}
+                className="w-full py-3 text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/30 font-medium transition-colors"
+              >
                 Show on map
               </button>
             </div>

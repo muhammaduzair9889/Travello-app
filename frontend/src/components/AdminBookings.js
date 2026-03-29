@@ -59,25 +59,33 @@ const AdminBookings = () => {
       navigate('/login');
       return;
     }
+    
+    const loadHotelsAndBookings = async () => {
+      setLoading(true);
+      setError(null);
+      try {
+        const [hotelsRes] = await Promise.all([
+          hotelAPI.getAllHotels(),
+        ]);
+        setHotels(hotelsRes.data || []);
+        
+        // Fetch bookings with current filters
+        const params = Object.entries(filters).reduce((acc, [key, value]) => {
+          if (value) acc[key] = value;
+          return acc;
+        }, {});
+        const bookingsRes = await bookingAPI.getAdminBookings(params);
+        setBookings(bookingsRes.data?.bookings || bookingsRes.data || []);
+      } catch (err) {
+        console.error('Failed to load admin data', err);
+        setError('Failed to load admin bookings.');
+      } finally {
+        setLoading(false);
+      }
+    };
+    
     loadHotelsAndBookings();
-  }, [navigate]);
-
-  const loadHotelsAndBookings = async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const [hotelsRes] = await Promise.all([
-        hotelAPI.getAllHotels(),
-      ]);
-      setHotels(hotelsRes.data || []);
-      await fetchBookings();
-    } catch (err) {
-      console.error('Failed to load admin data', err);
-      setError('Failed to load admin bookings.');
-    } finally {
-      setLoading(false);
-    }
-  };
+  }, [navigate, filters]);
 
   const fetchBookings = async () => {
     setIsFiltering(true);

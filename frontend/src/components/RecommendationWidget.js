@@ -354,39 +354,8 @@ const RecommendationWidget = () => {
     }
   }, []);
 
-  // Submit an answer
-  const submitAnswer = useCallback(async (answer) => {
-    if (!sessionId) return;
-
-    try {
-      const res = await axios.post(`${API_BASE}/recommendations/answer/`, {
-        session_id: sessionId,
-        answer,
-      }, { timeout: 30000 });
-
-      const data = res.data;
-      setProfile(data.profile || {});
-
-      if (data.status === 'interviewing') {
-        setCurrentQuestion({
-          question: data.question,
-          options: data.options,
-          inputType: data.input_type,
-          key: data.key,
-          step: data.step,
-          totalSteps: data.total_steps,
-        });
-      } else if (data.status === 'scraping' || data.status === 'ranking') {
-        setPhase('scraping');
-        startPolling(sessionId);
-      }
-    } catch (err) {
-      setError('Failed to process your answer. Please try again.');
-    }
-  }, [sessionId]);
-
-  // Poll for scraping/ranking completion
-  const startPolling = useCallback((sid) => {
+  // Poll for scraping/ranking completion  
+  const pollForResults = useCallback((sid) => {
     if (pollRef.current) clearInterval(pollRef.current);
 
     pollRef.current = setInterval(async () => {
@@ -421,6 +390,37 @@ const RecommendationWidget = () => {
       }
     }, 3000);
   }, []);
+
+  // Submit an answer
+  const submitAnswer = useCallback(async (answer) => {
+    if (!sessionId) return;
+
+    try {
+      const res = await axios.post(`${API_BASE}/recommendations/answer/`, {
+        session_id: sessionId,
+        answer,
+      }, { timeout: 30000 });
+
+      const data = res.data;
+      setProfile(data.profile || {});
+
+      if (data.status === 'interviewing') {
+        setCurrentQuestion({
+          question: data.question,
+          options: data.options,
+          inputType: data.input_type,
+          key: data.key,
+          step: data.step,
+          totalSteps: data.total_steps,
+        });
+      } else if (data.status === 'scraping' || data.status === 'ranking') {
+        setPhase('scraping');
+        pollForResults(sessionId);
+      }
+    } catch (err) {
+      setError('Failed to process your answer. Please try again.');
+    }
+  }, [sessionId, pollForResults]);
 
   // Initialize on mount
   useEffect(() => {

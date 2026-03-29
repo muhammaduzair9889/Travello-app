@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState, useCallback } from 'react';
 import { useNavigate, useParams, useLocation } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { FaBed, FaCalendarAlt, FaMapMarkerAlt, FaMoneyBillWave, FaUsers } from 'react-icons/fa';
-import { hotelAPI, bookingAPI, paymentAPI } from '../services/api';
+import { hotelAPI, bookingAPI } from '../services/api';
 
 const formatPKR = (value) => {
   if (Number.isNaN(value)) return '0';
@@ -226,10 +226,10 @@ const HotelDetailPage = () => {
         <div className="text-center">
           <p className="text-gray-600 dark:text-gray-400 mb-4">{error}</p>
           <button
-            onClick={() => navigate('/hotels')}
+            onClick={() => navigate('/dashboard')}
             className="px-6 py-3 bg-sky-600 text-white rounded-lg"
           >
-            Back to Hotels
+            Return to Dashboard
           </button>
         </div>
       </div>
@@ -431,10 +431,10 @@ const HotelDetailPage = () => {
                   {confirming ? 'Processing...' : paymentMethod === 'ONLINE' ? 'Confirm & Pay' : 'Confirm Booking'}
                 </button>
                 <button
-                  onClick={() => navigate('/hotels')}
+                  onClick={() => navigate('/dashboard')}
                   className="mt-2 w-full py-2 bg-gray-200 dark:bg-gray-700 text-gray-800 dark:text-white rounded-lg"
                 >
-                  Back to Hotels
+                  Return to Dashboard
                 </button>
               </div>
             </div>

@@ -52,6 +52,10 @@ ALLOWED_HOSTS = config('ALLOWED_HOSTS', default='localhost,127.0.0.1').split(','
 if 'RENDER' in os.environ:
     ALLOWED_HOSTS.append(os.environ.get('RENDER_EXTERNAL_HOSTNAME'))
 
+# Add testserver for Django test client
+if 'testserver' not in ALLOWED_HOSTS:
+    ALLOWED_HOSTS.append('testserver')
+
 
 # Application definition
 
@@ -70,6 +74,7 @@ INSTALLED_APPS = [
     'scraper',
     'itineraries',
     'reviews',
+    'weather',
 ]
 
 MIDDLEWARE = [
@@ -123,6 +128,10 @@ else:
         'default': {
             'ENGINE': 'django.db.backends.sqlite3',
             'NAME': BASE_DIR.parent / 'db.sqlite3',
+            'OPTIONS': {
+                'timeout': 20,  # 20 second timeout for database locks
+            },
+            'ATOMIC_REQUESTS': False,  # Disable for better concurrent write handling
         }
     }
 
@@ -299,6 +308,9 @@ GROQ_API_KEY = config('GROQ_API_KEY', default='')
 # Tavily Search API (Internet search for travel queries)
 TAVILY_API_KEY = config('TAVILY_API_KEY', default='')
 
+# OpenWeather API Settings (Weather Module)
+OPENWEATHER_API_KEY = config('OPENWEATHER_API_KEY', default='')
+
 # RapidAPI removed - using Puppeteer scraper for real-time hotel data
 # RAPIDAPI_KEY is no longer used
 
@@ -387,11 +399,11 @@ else:
 # ============================================
 # SCRAPER CONFIGURATION
 # ============================================
-SCRAPER_MAX_RESULTS = config('SCRAPER_MAX_RESULTS', default=600, cast=int)         # Target hotel count (v3: multi-filter 300-400+)
+SCRAPER_MAX_RESULTS = config('SCRAPER_MAX_RESULTS', default=1400, cast=int)        # Target hotel count (deep mode: 500-1400+)
 SCRAPER_CACHE_TTL_MINS = config('SCRAPER_CACHE_TTL_MINS', default=15, cast=int)    # Cache lifetime
 SCRAPER_CONCURRENCY_LIMIT = config('SCRAPER_CONCURRENCY_LIMIT', default=4, cast=int)  # Max parallel scrapes
-SCRAPER_MAX_SECONDS = config('SCRAPER_MAX_SECONDS', default=140, cast=int)         # Per-run time limit (v3: ~50 filter×sort combos)
-SCRAPER_HARD_TIMEOUT = config('SCRAPER_HARD_TIMEOUT', default=200, cast=int)       # Subprocess hard timeout (v3: generous margin)
+SCRAPER_MAX_SECONDS = config('SCRAPER_MAX_SECONDS', default=400, cast=int)         # Per-run time limit (deep mode: sort/filter/offset/variation passes)
+SCRAPER_HARD_TIMEOUT = config('SCRAPER_HARD_TIMEOUT', default=320, cast=int)       # Subprocess hard timeout (deep mode margin)
 
 # ============================================
 # FEATURE FLAGS

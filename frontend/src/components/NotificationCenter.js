@@ -102,15 +102,27 @@ export default function NotificationCenter() {
 
   /* ── Fetch unread count (polling every 30s) ── */
   const fetchCount = useCallback(async () => {
+    // Only fetch if user is authenticated
+    const token = localStorage.getItem('access_token');
+    if (!token) return;
+    
     try {
       const res = await notificationAPI.unreadCount();
       setUnreadCount(res.data?.unread || 0);
-    } catch {
-      // Silently ignore — API may not be ready
+    } catch (error) {
+      // Silently ignore — API may not be ready or user session expired
+      if (error.response?.status === 401) {
+        // Token might be expired, user will need to login again
+        localStorage.removeItem('access_token');
+      }
     }
   }, []);
 
   useEffect(() => {
+    // Only set up polling if user is logged in
+    const token = localStorage.getItem('access_token');
+    if (!token) return;
+    
     fetchCount();
     const interval = setInterval(fetchCount, 30000);
     return () => clearInterval(interval);
@@ -118,14 +130,25 @@ export default function NotificationCenter() {
 
   /* ── Fetch notifications when panel opens ── */
   const fetchNotifications = useCallback(async () => {
+    const token = localStorage.getItem('access_token');
+    if (!token) {
+      setNotifications([]);
+      return;
+    }
+    
     setLoading(true);
     try {
       const params = filter === 'unread' ? { unread: 1 } : {};
       const res = await notificationAPI.list(params);
       setNotifications(res.data?.results || res.data || []);
-    } catch {
+    } catch (error) {
+      if (error.response?.status === 401) {
+        localStorage.removeItem('access_token');
+      }
       setNotifications([]);
-    } finally { setLoading(false); }
+    } finally { 
+      setLoading(false); 
+    }
   }, [filter]);
 
   useEffect(() => {

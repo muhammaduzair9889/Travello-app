@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
-import { FaSearch, FaMapMarkerAlt, FaStar, FaHeart, FaRegHeart, FaWifi, FaParking, FaSwimmingPool, FaUtensils, FaFilter, FaSort, FaTimes } from 'react-icons/fa';
+import { motion } from 'framer-motion';
+import { FaSearch, FaMapMarkerAlt, FaStar, FaHeart, FaRegHeart, FaWifi, FaParking, FaSwimmingPool, FaUtensils } from 'react-icons/fa';
 import { MapContainer, TileLayer, Marker, Popup, useMap } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
 import L from 'leaflet';
@@ -62,7 +62,6 @@ const HotelResults = () => {
   const [hotels, setHotels] = useState([]);
   const [filteredHotels, setFilteredHotels] = useState([]);
   const [loading, setLoading] = useState(false);
-  const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState('');
   
   // Sorting and filtering
@@ -83,8 +82,8 @@ const HotelResults = () => {
   
   // Map state
   const [showMap, setShowMap] = useState(false);
-  const [mapCenter, setMapCenter] = useState([31.5204, 74.3587]); // Lahore coordinates
-  const [mapZoom, setMapZoom] = useState(12);
+  const [mapCenter] = useState([31.5204, 74.3587]); // Lahore coordinates
+  const [mapZoom] = useState(12);
   const [activeHotel, setActiveHotel] = useState(null);
   
   // Favorites
@@ -96,40 +95,8 @@ const HotelResults = () => {
   
   const hotelRefs = useRef({});
 
-  // Load initial data
-  useEffect(() => {
-    const urlParams = new URLSearchParams(window.location.search);
-    const checkIn = urlParams.get('checkIn') || getDefaultCheckIn();
-    const checkOut = urlParams.get('checkOut') || getDefaultCheckOut();
-    const adults = parseInt(urlParams.get('adults')) || 2;
-    const roomType = urlParams.get('roomType') || 'double';
-
-    setSearchParams(prev => ({ ...prev, checkIn, checkOut, adults, roomType }));
-    handleSearch({ checkIn, checkOut, adults, roomType });
-  }, []);
-
-  const getDefaultCheckIn = () => {
-    const tomorrow = new Date();
-    tomorrow.setDate(tomorrow.getDate() + 1);
-    return formatDate(tomorrow);
-  };
-
-  const getDefaultCheckOut = () => {
-    const dayAfter = new Date();
-    dayAfter.setDate(dayAfter.getDate() + 3);
-    return formatDate(dayAfter);
-  };
-
-  const formatDate = (date) => {
-    const year = date.getFullYear();
-    const month = String(date.getMonth() + 1).padStart(2, '0');
-    const day = String(date.getDate()).padStart(2, '0');
-    return `${year}-${month}-${day}`;
-  };
-
   const handleSearch = async (params = searchParams) => {
     setLoading(true);
-    setRefreshing(false);
     setError('');
 
     try {
@@ -144,7 +111,6 @@ const HotelResults = () => {
           const freshHotels = freshData.hotels || [];
           if (freshHotels.length > 0) {
             setHotels(freshHotels);
-            setRefreshing(false);
           }
         }
       });
@@ -152,10 +118,6 @@ const HotelResults = () => {
       const hotelsList = response?.hotels || response || [];
       setHotels(hotelsList);
       setFilteredHotels(hotelsList);
-
-      if (response?.cached && !response?.is_real_time) {
-        setRefreshing(true);
-      }
       
       // Calculate price range
       if (hotelsList.length > 0) {
@@ -172,6 +134,29 @@ const HotelResults = () => {
       setLoading(false);
     }
   };
+
+  // Load initial data (runs once on mount)
+  useEffect(() => {
+    // Initialize with default values on component mount
+    const tomorrow = new Date();
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    const tomorrowYear = tomorrow.getFullYear();
+    const tomorrowMonth = String(tomorrow.getMonth() + 1).padStart(2, '0');
+    const tomorrowDay = String(tomorrow.getDate()).padStart(2, '0');
+    const checkIn = `${tomorrowYear}-${tomorrowMonth}-${tomorrowDay}`;
+    
+    const dayAfter = new Date();
+    dayAfter.setDate(dayAfter.getDate() + 3);
+    const afterYear = dayAfter.getFullYear();
+    const afterMonth = String(dayAfter.getMonth() + 1).padStart(2, '0');
+    const afterDay = String(dayAfter.getDate()).padStart(2, '0');
+    const checkOut = `${afterYear}-${afterMonth}-${afterDay}`;
+    
+    const adults = 2;
+    const roomType = 'double';
+
+    setSearchParams(prev => ({ ...prev, checkIn, checkOut, adults, roomType }));
+  }, []);
 
   // Apply filters and sorting
   useEffect(() => {

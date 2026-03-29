@@ -78,7 +78,11 @@ class ReviewViewSet(viewsets.ModelViewSet):
         trip_type = self.request.query_params.get('trip_type')
 
         if hotel_id:
-            qs = qs.filter(hotel_id=hotel_id)
+            try:
+                qs = qs.filter(hotel_id=int(hotel_id))
+            except (TypeError, ValueError):
+                # Scraped client-side ids look like "scraped-123" and are not DB ids.
+                return qs.none()
         if user_id:
             qs = qs.filter(user_id=user_id)
         if rating:

@@ -7,14 +7,11 @@ const PaymentSuccess = () => {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const [bookingId, setBookingId] = useState(null);
-  const [sessionId, setSessionId] = useState(null);
 
   useEffect(() => {
     const booking = searchParams.get('booking_id');
-    const session = searchParams.get('session_id');
     
     setBookingId(booking);
-    setSessionId(session);
 
     // Auto redirect after 10 seconds
     const timer = setTimeout(() => {

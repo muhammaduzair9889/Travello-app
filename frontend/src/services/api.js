@@ -47,14 +47,14 @@ const AUTH_EXEMPT_PATHS = [
   '/auth/login/',
   '/auth/admin/login/',
   '/auth/verify-captcha/',
-  '/auth/api/signup-otp/',
-  '/auth/api/verify-signup-otp/',
-  '/auth/api/login-otp/',
-  '/auth/api/verify-login-otp/',
-  '/auth/api/resend-login-otp/',
-  '/auth/api/request-otp/',
-  '/auth/api/verify-password-reset-otp-only/',
-  '/auth/api/verify-password-reset-otp/',
+  '/auth/signup-otp/',
+  '/auth/verify-signup-otp/',
+  '/auth/login-otp/',
+  '/auth/verify-login-otp/',
+  '/auth/resend-login-otp/',
+  '/auth/request-otp/',
+  '/auth/verify-password-reset-otp-only/',
+  '/auth/verify-password-reset-otp/',
   '/auth/google/login/',
   '/auth/chat/',
 ];
@@ -174,14 +174,14 @@ export const authAPI = {
   login: (credentials) => api.post('/auth/login/', credentials),
   adminLogin: (credentials) => api.post('/auth/admin/login/', credentials),
   verifyCaptcha: (token) => api.post('/auth/verify-captcha/', { token }),
-  signupOtp: (userData) => api.post('/auth/api/signup-otp/', userData),
-  verifySignupOtp: (payload) => api.post('/auth/api/verify-signup-otp/', payload),
-  loginOtp: (credentials) => api.post('/auth/api/login-otp/', credentials),
-  resendLoginOtp: (payload) => api.post('/auth/api/resend-login-otp/', payload),
-  verifyLoginOtp: (payload) => api.post('/auth/api/verify-login-otp/', payload),
-  requestPasswordResetOtp: (payload) => api.post('/auth/api/request-otp/', payload),
-  verifyPasswordResetOtpOnly: (payload) => api.post('/auth/api/verify-password-reset-otp-only/', payload),
-  resetPasswordWithOtp: (payload) => api.post('/auth/api/verify-password-reset-otp/', payload),
+  signupOtp: (userData) => api.post('/auth/signup-otp/', userData),
+  verifySignupOtp: (payload) => api.post('/auth/verify-signup-otp/', payload),
+  loginOtp: (credentials) => api.post('/auth/login-otp/', credentials),
+  resendLoginOtp: (payload) => api.post('/auth/resend-login-otp/', payload),
+  verifyLoginOtp: (payload) => api.post('/auth/verify-login-otp/', payload),
+  requestPasswordResetOtp: (payload) => api.post('/auth/request-otp/', payload),
+  verifyPasswordResetOtpOnly: (payload) => api.post('/auth/verify-password-reset-otp-only/', payload),
+  resetPasswordWithOtp: (payload) => api.post('/auth/verify-password-reset-otp/', payload),
   googleLogin: (payload) => api.post('/auth/google/login/', payload),
 };
 
@@ -199,10 +199,9 @@ export const chatAPI = {
       { headers, timeout: 75000 },
     ).catch(error => {
       console.error('Chat error:', error);
-      throw {
-        message: error.response?.data?.error || 'Failed to get response. Please try again.',
-        status: error.response?.status || 'error',
-      };
+      throw new Error(
+        error.response?.data?.error || 'Failed to get response. Please try again.'
+      );
     });
   },
 };

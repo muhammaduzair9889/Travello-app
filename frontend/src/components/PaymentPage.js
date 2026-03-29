@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState, useCallback, useMemo } from 'react';
 import { useNavigate, useParams, useLocation } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
@@ -91,6 +91,20 @@ const RoomLockTimer = () => {
 ────────────────────────────────────────────── */
 const ConfirmationScreen = ({ result, booking, onDownloadInvoice, onBack }) => {
   const isCash = result.payment_method === 'cash_on_arrival';
+  const guestMeta = useMemo(() => {
+    if (!booking?.special_requests) return null;
+    try {
+      const parsed = JSON.parse(booking.special_requests);
+      if (parsed && typeof parsed === 'object') return parsed;
+    } catch {
+      return null;
+    }
+    return null;
+  }, [booking?.special_requests]);
+
+  const leadPax = guestMeta?.lead_pax || null;
+  const passengers = Array.isArray(guestMeta?.passengers) ? guestMeta.passengers : [];
+
   return (
     <motion.div
       initial={{ opacity: 0, scale: 0.95 }}
@@ -154,6 +168,35 @@ const ConfirmationScreen = ({ result, booking, onDownloadInvoice, onBack }) => {
       {result.price_breakdown && (
         <div className="text-left">
           <PriceBreakdown booking={booking} breakdown={result.price_breakdown} />
+        </div>
+      )}
+
+      {(leadPax || passengers.length > 0) && (
+        <div className="bg-gray-50 dark:bg-gray-800 rounded-2xl p-5 text-left space-y-3 text-sm">
+          <h3 className="font-semibold text-gray-900 dark:text-white">Guest Details</h3>
+          {leadPax && (
+            <div className="space-y-1 text-gray-700 dark:text-gray-300">
+              <p><span className="text-gray-500 dark:text-gray-400">Lead Passenger:</span> {leadPax.name || 'N/A'}</p>
+              <p><span className="text-gray-500 dark:text-gray-400">Date of Birth:</span> {leadPax.dob || 'N/A'}</p>
+              {(leadPax.phone || leadPax.email) && (
+                <p>
+                  <span className="text-gray-500 dark:text-gray-400">Contact:</span> {leadPax.phone || leadPax.email}
+                </p>
+              )}
+            </div>
+          )}
+          {passengers.length > 0 && (
+            <div>
+              <p className="text-gray-500 dark:text-gray-400 mb-1">Passengers</p>
+              <ul className="space-y-1 text-gray-700 dark:text-gray-300">
+                {passengers.map((p, idx) => (
+                  <li key={`${p.type || 'pax'}-${idx}`}>
+                    {idx + 1}. {p.name || 'N/A'} ({p.type || 'guest'})
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
         </div>
       )}
 
@@ -349,6 +392,17 @@ const PaymentPage = () => {
     }
   };
 
+  const bookingGuestMeta = useMemo(() => {
+    if (!booking?.special_requests) return null;
+    try {
+      const parsed = JSON.parse(booking.special_requests);
+      if (parsed && typeof parsed === 'object') return parsed;
+    } catch {
+      return null;
+    }
+    return null;
+  }, [booking?.special_requests]);
+
   /* ── Error screen ── */
   if (!loading && (error && !booking)) {
     return (
@@ -371,6 +425,7 @@ const PaymentPage = () => {
   const checkOut   = booking?.check_out ? new Date(booking.check_out).toLocaleDateString('en-PK', { weekday: 'short', year: 'numeric', month: 'short', day: 'numeric' }) : '—';
   const nights     = booking?.number_of_nights || 1;
   const adults     = booking?.adults || 1;
+  const children   = booking?.children || 0;
   const { brand }  = detectBrand(cardNumber);
 
   return (
@@ -624,7 +679,20 @@ const PaymentPage = () => {
                 {adults > 0 && (
                   <div className="flex items-center gap-3">
                     <FaUsers className="text-blue-500 flex-shrink-0" />
-                    <span className="text-gray-700 dark:text-gray-300">{adults} adult{adults > 1 ? 's' : ''}</span>
+                    <span className="text-gray-700 dark:text-gray-300">
+                      {adults} adult{adults > 1 ? 's' : ''}{children > 0 ? `, ${children} child${children > 1 ? 'ren' : ''}` : ''}
+                    </span>
+                  </div>
+                )}
+
+                {bookingGuestMeta?.lead_pax && (
+                  <div className="pt-2 border-t border-gray-100 dark:border-gray-700 text-xs text-gray-600 dark:text-gray-400 space-y-1">
+                    <p className="font-semibold text-gray-700 dark:text-gray-300">Lead Passenger</p>
+                    <p>{bookingGuestMeta.lead_pax.name || 'N/A'}</p>
+                    <p>DOB: {bookingGuestMeta.lead_pax.dob || 'N/A'}</p>
+                    {(bookingGuestMeta.lead_pax.phone || bookingGuestMeta.lead_pax.email) && (
+                      <p>Contact: {bookingGuestMeta.lead_pax.phone || bookingGuestMeta.lead_pax.email}</p>
+                    )}
                   </div>
                 )}
               </div>

@@ -189,6 +189,7 @@ const Signup = () => {
       const response = await authAPI.googleLogin({
         credential: credentialResponse.credential,
       });
+      // Google auth returns tokens directly
       localStorage.setItem('access_token', response.data.tokens.access);
       localStorage.setItem('refresh_token', response.data.tokens.refresh);
       localStorage.setItem('user', JSON.stringify(response.data.user));

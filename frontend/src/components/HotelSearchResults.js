@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
@@ -91,7 +91,7 @@ const LoadingScreen = ({ searchParams }) => {
   const [dotsCount, setDotsCount] = useState(1);
 
   const loadingMessages = [
-    'Connecting to Booking.com',
+    'Connecting',
     'Searching available hotels',
     'Fetching real-time prices',
     'Comparing room options',
@@ -877,6 +877,7 @@ const HotelSearchResults = () => {
 
   // Mobile filter
   const [showMobileFilters, setShowMobileFilters] = useState(false);
+  const hasInitialFetchRef = useRef(false);
 
   // Open modify search modal
   const openModifySearch = () => {
@@ -910,6 +911,9 @@ const HotelSearchResults = () => {
 
   // Fetch hotels on mount (or load AI results directly)
   useEffect(() => {
+    if (hasInitialFetchRef.current) return;
+    hasInitialFetchRef.current = true;
+
     if (isAiRecommendation && aiHotels.length > 0) {
       loadAiRecommendations();
     } else {
@@ -1064,10 +1068,20 @@ const HotelSearchResults = () => {
           rooms: 1,
           children: parseInt(params.children) || 0,
           use_cache: true,
+          coverage_priority: false,
+          deep_search: false,
+          quick_mode: true,
           // Match Booking URL sort order so first page hotels and prices align
           order: 'price',
         })
       });
+
+      let data = {};
+      try {
+        data = await response.json();
+      } catch {
+        data = {};
+      }
 
       // Auto-retry once on 503 (scraper at capacity) after a short delay
       if (response.status === 503 && !params._retried503) {
@@ -1076,17 +1090,29 @@ const HotelSearchResults = () => {
         return fetchHotelsWithParams({ ...params, _retried503: true });
       }
 
-      const data = await response.json();
+      // Auto-retry transient backend errors (e.g., sqlite lock during job creation)
+      if ((response.status >= 500 || response.status === 429) && !params._retried5xx) {
+        console.warn(`Backend transient error ${response.status}, retrying in 3 seconds...`);
+        await new Promise(r => setTimeout(r, 3000));
+        return fetchHotelsWithParams({ ...params, _retried5xx: true });
+      }
+
+      if (!response.ok) {
+        throw new Error(data?.error || data?.message || `Failed to initiate scrape (${response.status}).`);
+      }
 
       // If backend returned a job_id but no cached hotels, poll for results
       if (data.success && data.job_id && (!data.hotels || data.hotels.length === 0)) {
         console.log(`No cache. Polling job ${data.job_id}...`);
         const POLL_INTERVAL = 2000;
-        const MAX_POLLS = 45; // ~90s of polling — plenty for 60s scrape
+        // Keep polling window aligned with backend runtime budget.
+        const MAX_POLLS = 180; // ~360s total polling
         let pollHotels = [];
         let pollMeta = {};
         let jobFailed = false;
         let failError = '';
+        let lastStatus = 'QUEUED';
+        let lastProgress = 0;
 
         for (let attempt = 0; attempt < MAX_POLLS; attempt++) {
           await new Promise(r => setTimeout(r, POLL_INTERVAL));
@@ -1094,6 +1120,8 @@ const HotelSearchResults = () => {
             const statusRes = await fetch(`${API_ROOT}/api/scraper/job-status/${data.job_id}/`);
             const statusData = await statusRes.json();
             console.log(`[poll ${attempt + 1}] status=${statusData.status} hotels=${statusData.hotel_count}`);
+            lastStatus = statusData.status || lastStatus;
+            lastProgress = Number(statusData.progress_pct || 0);
 
             if (statusData.status === 'COMPLETED' || statusData.status === 'PARTIAL') {
               const resultsRes = await fetch(`${API_ROOT}/api/scraper/results/${data.job_id}/`);
@@ -1105,6 +1133,9 @@ const HotelSearchResults = () => {
             if (statusData.status === 'FAILED') {
               jobFailed = true;
               failError = statusData.error || 'Scraper job failed';
+              if (String(failError).toLowerCase().includes('timed out')) {
+                failError = 'Scraper took too long. Try again once, or narrow dates/guests for faster results';
+              }
               break;
             }
           } catch (pollErr) {
@@ -1117,7 +1148,10 @@ const HotelSearchResults = () => {
           throw new Error(`Hotel search failed: ${failError}. Please try again.`);
         }
         if (pollHotels.length === 0) {
-          throw new Error('Hotel search is taking longer than expected. Please try again.');
+          throw new Error(
+            `Search is still running (${lastStatus}${lastProgress ? `, ${lastProgress}%` : ''}). ` +
+            'Please tap Try Again to continue polling this search.'
+          );
         }
 
         // Treat polled results like a successful cached response
@@ -1669,12 +1703,12 @@ const HotelSearchResults = () => {
         </div>
 
         {/* Results Info Banner */}
-        {scraperMeta && scraperMeta.reported_count && scraperMeta.scraped_count < scraperMeta.reported_count && (
+        {scraperMeta && scraperMeta.scraped_count > 0 && (
           <div className="bg-blue-500 dark:bg-blue-600 py-2 px-4">
             <div className="max-w-7xl mx-auto flex items-center justify-center gap-3 text-sm">
               <FaExclamationTriangle />
               <span className="font-medium">
-                Showing {scraperMeta.scraped_count} of {scraperMeta.reported_count} properties{isAiRecommendation ? ' — AI-powered recommendations by Travello' : ' — real-time prices from Booking.com'}
+                Showing {scraperMeta.scraped_count} live-priced properties{isAiRecommendation ? ' — AI-powered recommendations by Travello' : ' — real-time prices from Booking.com'}
               </span>
             </div>
           </div>

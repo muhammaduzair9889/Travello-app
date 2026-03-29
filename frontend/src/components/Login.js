@@ -46,7 +46,7 @@ const Login = () => {
     if (!emailRegex.test(email)) return 'Please enter a valid email address';
     if (email.includes('..')) return 'Email cannot contain consecutive dots';
     
-    const [localPart, domain] = email.split('@');
+    const [localPart] = email.split('@');
     if (localPart.startsWith('.') || localPart.endsWith('.')) {
       return 'Email cannot start or end with a dot';
     }
@@ -153,10 +153,12 @@ const Login = () => {
       const response = await authAPI.googleLogin({
         credential: credentialResponse.credential,
       });
-      // Backend now sends OTP instead of tokens — redirect to OTP page
-      const nextEmail = response?.data?.email || '';
+      // Google auth returns tokens directly (no OTP needed)
+      localStorage.setItem('access_token', response.data.tokens.access);
+      localStorage.setItem('refresh_token', response.data.tokens.refresh);
+      localStorage.setItem('user', JSON.stringify(response.data.user));
       localStorage.setItem('isAdmin', 'false');
-      navigate('/verify-login-otp', { state: { email: nextEmail, isGoogleLogin: true } });
+      navigate('/dashboard');
     } catch (err) {
       setError(err.message || 'Google login failed. Please try again.');
     } finally {

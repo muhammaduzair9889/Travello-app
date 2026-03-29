@@ -18,10 +18,10 @@ const Payment = () => {
         <div className="text-center">
           <p className="text-gray-600 dark:text-gray-400 mb-4">No booking found</p>
           <button
-            onClick={() => navigate('/hotels')}
+            onClick={() => navigate('/dashboard')}
             className="px-6 py-3 bg-sky-600 text-white rounded-lg"
           >
-            Browse Hotels
+            Return to Dashboard
           </button>
         </div>
       </div>
@@ -142,7 +142,7 @@ const Payment = () => {
           {/* Action Buttons */}
           <div className="flex gap-4">
             <button
-              onClick={() => navigate('/hotels')}
+              onClick={() => navigate('/dashboard')}
               disabled={loading}
               className="flex-1 py-3 bg-gray-600 hover:bg-gray-700 text-white rounded-lg font-medium transition-colors disabled:opacity-50"
             >

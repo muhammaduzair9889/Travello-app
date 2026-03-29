@@ -120,7 +120,6 @@ const getInitialEntries = () => {
 // AI Text Assistant Component
 const AITextAssistant = ({ text, onApply, onClose }) => {
   const [isProcessing, setIsProcessing] = useState(false);
-  const [suggestions, setSuggestions] = useState([]);
   const [selectedAction, setSelectedAction] = useState(null);
   const [improvedText, setImprovedText] = useState('');
 
@@ -141,7 +140,6 @@ const AITextAssistant = ({ text, onApply, onClose }) => {
       const response = await chatAPI.sendMessage(`${action.prompt}\n\n"${text}"`);
       const reply = response?.data?.reply || '';
       setImprovedText(reply);
-      setSuggestions([{ action: action.label, result: reply }]);
     } catch (error) {
       console.error('AI assistance error:', error);
       setImprovedText('Sorry, I could not process your request. Please try again.');

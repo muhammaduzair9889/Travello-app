@@ -16,18 +16,18 @@ urlpatterns = [
     # OTP-BASED AUTHENTICATION API ENDPOINTS
     # ============================================
     # Signup with OTP
-    path('api/signup-otp/', views.signup_with_otp, name='signup_with_otp'),
-    path('api/verify-signup-otp/', views.verify_signup_otp, name='verify_signup_otp'),
+    path('signup-otp/', views.signup_with_otp, name='signup_with_otp'),
+    path('verify-signup-otp/', views.verify_signup_otp, name='verify_signup_otp'),
     
     # Login with OTP
-    path('api/login-otp/', views.login_with_otp, name='login_with_otp'),
-    path('api/resend-login-otp/', views.resend_login_otp, name='resend_login_otp'),
-    path('api/verify-login-otp/', views.verify_login_otp, name='verify_login_otp'),
+    path('login-otp/', views.login_with_otp, name='login_with_otp'),
+    path('resend-login-otp/', views.resend_login_otp, name='resend_login_otp'),
+    path('verify-login-otp/', views.verify_login_otp, name='verify_login_otp'),
     
     # Password Reset with OTP
-    path('api/request-otp/', views.request_otp, name='request_otp'),
-    path('api/verify-password-reset-otp-only/', views.verify_password_reset_otp_only, name='verify_password_reset_otp_only'),
-    path('api/verify-password-reset-otp/', views.verify_password_reset_otp, name='verify_password_reset_otp'),
+    path('request-otp/', views.request_otp, name='request_otp'),
+    path('verify-password-reset-otp-only/', views.verify_password_reset_otp_only, name='verify_password_reset_otp_only'),
+    path('verify-password-reset-otp/', views.verify_password_reset_otp, name='verify_password_reset_otp'),
     
     # ============================================
     # NOTIFICATION CENTRE API

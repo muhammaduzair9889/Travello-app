@@ -175,8 +175,8 @@ const AdminLogin = () => {
               </button>
             </div>
 
-            {/* Remember + Forgot */}
-            <div className="flex items-center justify-between">
+            {/* Remember me */}
+            <div className="flex items-center">
               <label className="flex items-center gap-2 text-sm text-gray-600 cursor-pointer select-none">
                 <input
                   type="checkbox"
@@ -187,9 +187,6 @@ const AdminLogin = () => {
                 />
                 Remember me
               </label>
-              <Link to="/forgot-password" className="text-sm text-primary-600 hover:text-primary-700 font-medium transition-colors">
-                Forgot Password?
-              </Link>
             </div>
 
             {/* reCAPTCHA */}

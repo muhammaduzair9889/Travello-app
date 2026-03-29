@@ -53,30 +53,30 @@ const ReviewsPage = () => {
   const [lightbox, setLightbox] = useState(null); // { photos, index }
 
   useEffect(() => {
+    const loadData = async () => {
+      setLoading(true);
+      try {
+        const params = { ordering: sortBy };
+        if (hotelId) params.hotel = hotelId;
+        if (ratingFilter) params.rating = ratingFilter;
+        if (sentimentFilter) params.sentiment = sentimentFilter;
+
+        const [reviewsRes, analyticsRes] = await Promise.all([
+          reviewAPI.list(params),
+          hotelId ? reviewAPI.analytics(hotelId) : Promise.resolve(null),
+        ]);
+
+        setReviews(reviewsRes.data);
+        if (analyticsRes) setAnalytics(analyticsRes.data);
+      } catch {
+        setError('Failed to load reviews.');
+      } finally {
+        setLoading(false);
+      }
+    };
+    
     loadData();
   }, [hotelId, ratingFilter, sentimentFilter, sortBy]);
-
-  const loadData = async () => {
-    setLoading(true);
-    try {
-      const params = { ordering: sortBy };
-      if (hotelId) params.hotel = hotelId;
-      if (ratingFilter) params.rating = ratingFilter;
-      if (sentimentFilter) params.sentiment = sentimentFilter;
-
-      const [reviewsRes, analyticsRes] = await Promise.all([
-        reviewAPI.list(params),
-        hotelId ? reviewAPI.analytics(hotelId) : Promise.resolve(null),
-      ]);
-
-      setReviews(reviewsRes.data);
-      if (analyticsRes) setAnalytics(analyticsRes.data);
-    } catch {
-      setError('Failed to load reviews.');
-    } finally {
-      setLoading(false);
-    }
-  };
 
   const handleHelpful = async (reviewId) => {
     try {
