@@ -1,4 +1,6 @@
 from django.apps import AppConfig
+import os
+import sys
 
 
 class ItinerariesConfig(AppConfig):
@@ -7,6 +9,23 @@ class ItinerariesConfig(AppConfig):
 
     def ready(self):
         """Warm up the ranker cache once at startup so first request is fast."""
+        management_commands_to_skip = {
+            'migrate',
+            'makemigrations',
+            'showmigrations',
+            'check',
+            'test',
+            'shell',
+            'dbshell',
+            'collectstatic',
+        }
+
+        if os.environ.get('TRAVELLO_SKIP_HF_WARMUP') == '1':
+            return
+
+        if len(sys.argv) > 1 and sys.argv[1] in management_commands_to_skip:
+            return
+
         try:
             from .hf_ranker import create_hf_ranker
 

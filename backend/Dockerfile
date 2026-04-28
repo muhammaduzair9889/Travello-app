@@ -98,16 +98,7 @@ ENTRYPOINT ["tini", "--", "/app/entrypoint.sh"]
 HEALTHCHECK --interval=30s --timeout=5s --start-period=40s --retries=5 \
     CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:${PORT}/health/')" || exit 1
 
-# Gunicorn with production-grade settings
-CMD ["gunicorn", "travello_backend.travello_backend.wsgi:application", \
-     "--bind", "0.0.0.0:8000", \
-     "--workers", "2", \
-     "--worker-class", "gthread", \
-     "--threads", "2", \
-     "--timeout", "120",  \
-     "--graceful-timeout", "30", \
-     "--keep-alive", "5", \
-     "--max-requests", "1000", \
-     "--max-requests-jitter", "50", \
-     "--access-logfile", "-", \
-     "--error-logfile", "-"]
+# Daphne ASGI server — supports HTTP + WebSocket
+CMD ["daphne", "-b", "0.0.0.0", "-p", "8000", \
+     "--proxy-headers", \
+     "travello_backend.asgi:application"]

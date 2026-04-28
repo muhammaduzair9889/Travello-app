@@ -31,7 +31,7 @@ python manage.py migrate --noinput 2>&1 || echo "Migration warning (non-fatal)"
 echo "Collecting static files..."
 python manage.py collectstatic --noinput 2>&1 || echo "Collectstatic warning (non-fatal)"
 
-echo "=== Starting Gunicorn ==="
+echo "=== Starting Daphne (ASGI) ==="
 
 # Execute the CMD (gunicorn)
 exec "$@"

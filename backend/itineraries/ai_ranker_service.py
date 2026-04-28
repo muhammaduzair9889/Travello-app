@@ -25,14 +25,8 @@ except ImportError:
     logger.warning("LightGBM not available. Using rule-based fallback.")
     lgb = None
 
-# Try importing HuggingFace ranker
-try:
-    from itineraries.hf_ranker import create_hf_ranker
-    HF_AVAILABLE = True
-except ImportError:
-    HF_AVAILABLE = False
-    logger.warning("HuggingFace ranker not available.")
-    create_hf_ranker = None
+# Delay HuggingFace ranker import to runtime to keep management commands fast.
+create_hf_ranker = None
 
 
 @dataclass
@@ -131,17 +125,18 @@ class LearningToRankService:
         self.last_confidence = 0.0
         self.inference_latency_ms = 0
         
-        # Initialize HuggingFace ranker for semantic scoring
+        # Initialize HuggingFace ranker for semantic scoring.
+        # Import here to avoid loading transformers during unrelated management commands.
         self.hf_ranker = None
-        if HF_AVAILABLE and create_hf_ranker:
-            try:
-                self.hf_ranker = create_hf_ranker()
-                if self.hf_ranker is not None:
-                    logger.info("HuggingFace ranker initialized for semantic scoring")
-                else:
-                    logger.warning("HuggingFace ranker unavailable at runtime. Proceeding with LightGBM + fallback scoring.")
-            except Exception as e:
-                logger.warning(f"Failed to initialize HF ranker: {e}")
+        try:
+            from itineraries.hf_ranker import create_hf_ranker as _create_hf_ranker
+            self.hf_ranker = _create_hf_ranker()
+            if self.hf_ranker is not None:
+                logger.info("HuggingFace ranker initialized for semantic scoring")
+            else:
+                logger.warning("HuggingFace ranker unavailable at runtime. Proceeding with LightGBM + fallback scoring.")
+        except Exception as e:
+            logger.warning(f"Failed to initialize HF ranker: {e}")
         
         if model_path and LIGHTGBM_AVAILABLE:
             self._load_model_package(model_path)

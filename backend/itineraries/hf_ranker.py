@@ -109,8 +109,18 @@ class HFPlaceRanker:
         if TRANSFORMERS_ENCODER_AVAILABLE:
             try:
                 logger.info(f"Loading transformers fallback model: {self.FALLBACK_MODEL_NAME}")
-                self.tokenizer = AutoTokenizer.from_pretrained(self.FALLBACK_MODEL_NAME)
-                self.model = AutoModel.from_pretrained(self.FALLBACK_MODEL_NAME)
+                # Try local cache first to avoid slow network timeout on every startup.
+                try:
+                    self.tokenizer = AutoTokenizer.from_pretrained(
+                        self.FALLBACK_MODEL_NAME, local_files_only=True
+                    )
+                    self.model = AutoModel.from_pretrained(
+                        self.FALLBACK_MODEL_NAME, local_files_only=True
+                    )
+                except Exception:
+                    logger.info(f"Model not in local cache, downloading {self.FALLBACK_MODEL_NAME}...")
+                    self.tokenizer = AutoTokenizer.from_pretrained(self.FALLBACK_MODEL_NAME)
+                    self.model = AutoModel.from_pretrained(self.FALLBACK_MODEL_NAME)
                 self.model.eval()
                 self.model_loaded = True
                 self.encoder_type = 'transformers_fallback'

@@ -36,4 +36,7 @@ urlpatterns = [
 
     # Scraper endpoints
     path('api/scraper/', include('scraper.urls')),
+
+    # Safety endpoints
+    path('api/safety/', include('safety.urls')),
 ]

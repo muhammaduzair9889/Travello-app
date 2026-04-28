@@ -3,6 +3,7 @@ import axios from 'axios';
 const API_ROOT = (process.env.REACT_APP_API_URL || process.env.REACT_APP_API_BASE_URL || 'http://localhost:8000')
   .replace(/\/api\/?$/, '');
 const API_BASE_URL = `${API_ROOT}/api`;
+export const WS_BASE_URL = API_ROOT.replace(/^http/i, 'ws');
 
 // Simple cache implementation
 const cache = new Map();
@@ -361,6 +362,19 @@ export const reviewAPI = {
       headers: { 'Content-Type': 'multipart/form-data' },
     });
   },
+};
+
+export const safetyAPI = {
+  startSession: (payload = {}) => api.post('/safety/sessions/start/', payload),
+  getActiveSession: () => api.get('/safety/sessions/active/'),
+  updatePreferences: (sessionKey, payload) => api.post(`/safety/sessions/${sessionKey}/preferences/`, payload),
+  pushLocation: (sessionKey, payload) => api.post(`/safety/sessions/${sessionKey}/location/`, payload),
+  triggerSOS: (sessionKey, payload = {}) => api.post(`/safety/sessions/${sessionKey}/sos/`, payload),
+  acknowledgeSafe: (sessionKey) => api.post(`/safety/sessions/${sessionKey}/ack/`),
+  stopSession: (sessionKey) => api.post(`/safety/sessions/${sessionKey}/stop/`),
+  timeline: (sessionKey) => api.get(`/safety/sessions/${sessionKey}/timeline/`),
+  adminLive: () => api.get('/safety/admin/live/'),
+  adminIncidentAction: (incidentId, action) => api.post(`/safety/admin/incidents/${incidentId}/action/`, { action }),
 };
 
 export default api;

@@ -8,6 +8,7 @@ import {
 } from 'react-icons/fa';
 import { bookingAPI, hotelAPI } from '../services/api';
 import WeatherWidget from './WeatherWidget';
+import AdminSafetyMonitor from './safety/AdminSafetyMonitor';
 import {
   ResponsiveContainer, BarChart, Bar, PieChart, Pie, Cell,
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, Legend,
@@ -636,6 +637,8 @@ const AdminDashboard = () => {
                   Export PDF
                 </button>
               </div>
+
+              <AdminSafetyMonitor />
 
               {/* ─── KPI Cards ─── */}
               <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4 mb-6">

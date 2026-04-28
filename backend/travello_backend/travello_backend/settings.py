@@ -60,6 +60,7 @@ if 'testserver' not in ALLOWED_HOSTS:
 # Application definition
 
 INSTALLED_APPS = [
+    'daphne',
     'django.contrib.admin',
     'django.contrib.auth',
     'django.contrib.contenttypes',
@@ -68,6 +69,7 @@ INSTALLED_APPS = [
     'django.contrib.staticfiles',
     'rest_framework',
     'rest_framework_simplejwt',
+    'channels',
     'corsheaders',
     'authentication',
     'hotels',
@@ -75,6 +77,7 @@ INSTALLED_APPS = [
     'itineraries',
     'reviews',
     'weather',
+    'safety',
 ]
 
 MIDDLEWARE = [
@@ -108,6 +111,7 @@ TEMPLATES = [
 ]
 
 WSGI_APPLICATION = 'travello_backend.wsgi.application'
+ASGI_APPLICATION = 'travello_backend.asgi.application'
 
 
 # Database
@@ -394,6 +398,23 @@ else:
             'LOCATION': 'travello-cache',
             'TIMEOUT': 15 * 60,
         }
+    }
+
+# Channels layer: Redis in production, in-memory for local/dev
+if REDIS_URL:
+    CHANNEL_LAYERS = {
+        'default': {
+            'BACKEND': 'channels_redis.core.RedisChannelLayer',
+            'CONFIG': {
+                'hosts': [REDIS_URL],
+            },
+        },
+    }
+else:
+    CHANNEL_LAYERS = {
+        'default': {
+            'BACKEND': 'channels.layers.InMemoryChannelLayer',
+        },
     }
 
 # ============================================

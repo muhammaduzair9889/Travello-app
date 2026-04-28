@@ -44,6 +44,7 @@ urlpatterns = [
     path('api/scraper/', include('scraper.urls')),
     path('api/itineraries/', include('itineraries.urls')),
     path('api/reviews/', include('reviews.urls')),
+    path('api/safety/', include('safety.urls')),
     path('api/token/', TokenObtainPairView.as_view(), name='token_obtain_pair'),
     path('api/token/refresh/', TokenRefreshView.as_view(), name='token_refresh'),
 ]

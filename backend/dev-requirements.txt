@@ -1,0 +1,29 @@
+# Development & Testing Dependencies
+# Install with: pip install -r requirements.txt -r dev-requirements.txt
+
+# Include production requirements
+-r requirements.txt
+
+# Testing Framework
+pytest==7.4.3
+pytest-django==4.7.0
+pytest-cov==4.1.0
+
+# Testing Utilities
+factory-boy==3.3.0
+faker==22.1.0
+
+# Code Quality & Linting
+black==23.12.1
+flake8==6.1.0
+isort==5.13.2
+mypy==1.8.0
+
+# Development Server
+django-extensions==3.2.3
+
+# Database Tools
+django-debug-toolbar==4.2.0
+
+# API Testing
+httpx==0.25.2

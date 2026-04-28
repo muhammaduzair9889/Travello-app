@@ -5,6 +5,7 @@ import { hotelAPI, bookingAPI, authAPI } from '../services/api';
 import RecommendationWidget from './RecommendationWidget';
 import NotificationCenter from './NotificationCenter';
 import WeatherWidget from './WeatherWidget';
+import LiveSafetyWidget from './safety/LiveSafetyWidget';
 import { useTheme } from '../contexts/ThemeContext';
 import { 
   FaHotel, 
@@ -790,6 +791,8 @@ const SOSToolkitWidget = () => {
   return (
     <>
       <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4 }}>
+
+        <LiveSafetyWidget />
 
         {/* SOS Big Button */}
         <div className="card p-6 mb-4 border-2 border-red-200 dark:border-red-900/50 bg-gradient-to-br from-red-50 to-white dark:from-red-950/30 dark:to-surface-900">
