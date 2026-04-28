@@ -91,27 +91,6 @@ The platform will be available at `http://localhost:3000` and the API at `http:/
 
 **Infrastructure:** Docker, Docker Compose, Gunicorn, Nginx
 
-## Project Structure
-
-```
-travello/
-├── backend/           # Django REST API
-│   ├── authentication/    # User auth, JWT, OAuth
-│   ├── hotels/            # Hotel search & bookings
-│   ├── reviews/           # User reviews & ratings
-│   ├── itineraries/       # Trip planning & AI
-│   ├── scraper/           # Puppeteer-based scraping
-│   ├── ml_system/         # Recommendation engine
-│   ├── weather/           # Weather data
-│   └── travello_backend/  # Django configuration
-│
-└── frontend/          # React application
-    ├── components/    # Reusable components
-    ├── services/      # API integration
-    ├── contexts/      # State management
-    └── hooks/         # Custom React hooks
-```
-
 ## Common Tasks
 
 **Run Tests:**
